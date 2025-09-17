@@ -2,8 +2,9 @@ streamlit
 pandas
 altair
 requests
-streamlit-oauth
 json
 threading
 datetime
 base64
+streamlit-oauth==0.1.2
+google-auth-oauthlib

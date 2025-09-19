@@ -12,15 +12,50 @@ def safe_get(data_row, column_name, default_value=0):
     return data_row[column_name]
 
 
-def parse_json_details(json_string, default_value=None):
-    """Безпечно парсить JSON-рядок."""
+# def parse_json_details(json_string, default_value=None):
+#     """Безпечно парсить JSON-рядок."""
+#     if default_value is None:
+#         default_value = []
+#     try:
+#         if pd.isna(json_string) or not json_string:
+#             return default_value
+#         return json.loads(json_string)
+#     except (json.JSONDecodeError, TypeError):
+#         return default_value
+
+def parse_json_details(json_value, default_value=None):
+    """Безпечно повертає список словників з JSON-поля.
+       Приймає рядок JSON, list, dict, число або NaN."""
+    import pandas as pd, json
+
     if default_value is None:
         default_value = []
+
+    # 1) None / NaN / порожньо
+    if json_value is None or (isinstance(json_value, float) and pd.isna(json_value)):
+        return default_value
+
+    # 2) Якщо це вже Python-структура
+    if isinstance(json_value, list):
+        return json_value
+    if isinstance(json_value, dict):
+        return [json_value]
+    if isinstance(json_value, (int, float)):
+        # Число нам не підходить як список деталей → повертаємо порожній список
+        return default_value
+
+    # 3) Якщо це рядок — пробуємо парсити
     try:
-        if pd.isna(json_string) or not json_string:
+        s = str(json_value).strip()
+        if not s:
             return default_value
-        return json.loads(json_string)
-    except (json.JSONDecodeError, TypeError):
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return [parsed]
+        if isinstance(parsed, list):
+            return parsed
+        return default_value
+    except Exception:
         return default_value
 
 
@@ -93,7 +128,9 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
     total += int(safe_get(row, c.NP_COL_NTR_STANDART_VYKONAVETS_KILKIST, 0)) * c.NP_POINTS_NTR_STANDART_VYKONAVETS
 
     # 8. Статті
-    articles = parse_json_details(safe_get(row, c.NP_COL_NTR_STATTI_DETAILS_JSON, '[]'))
+    articles_raw = safe_get(row, c.NP_COL_NTR_STATTI_DETAILS_JSON, '[]')
+    # articles = parse_json_details(safe_get(row, c.NP_COL_NTR_STATTI_DETAILS_JSON, '[]'))
+    articles = parse_json_details(articles_raw, [])
     article_points_map = {
         "Scopus Q1": c.NP_POINTS_NTR_STATTI_SCOPUS_Q1, "Scopus Q2": c.NP_POINTS_NTR_STATTI_SCOPUS_Q2,
         "Scopus Q3": c.NP_POINTS_NTR_STATTI_SCOPUS_Q3, "Scopus Q4": c.NP_POINTS_NTR_STATTI_SCOPUS_Q4,
@@ -103,20 +140,47 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
         "Фахові України": c.NP_POINTS_NTR_STATTI_FAHOVI_UKRAINA,
         "Нефахові України": c.NP_POINTS_NTR_STATTI_NEFAHOVI_UKRAINA
     }
-    if isinstance(articles, int):
-        total = articles * 1
+    if isinstance(articles, dict):
+        articles = [articles]
+    if not isinstance(articles, list):
+        articles = []
+
     for article in articles:
-        total += int(article.get("count", 0)) * article_points_map.get(article.get("type"), 0)
+        t = (article or {}).get("type", "")
+        cnt = int((article or {}).get("count", 0) or 0)
+        total += cnt * article_points_map.get(t, 0)
+
+    # for article in articles:
+    #     total += int(article.get("count", 0)) * article_points_map.get(article.get("type"), 0)
+
+    # if isinstance(articles, (list, tuple)) and articles:  # Якщо список і не порожній
+    #     for article in articles:
+    #         total += int(article.get("count", 0)) * article_points_map.get(article.get("type"), 0)
+    # else:
+    #     # Якщо число або порожній/None, додаємо 0 (або множимо на коефіцієнт, наприклад, articles * 1, якщо це кількість)
+    #     total += 0  # Швидкий фікс: ігноруємо
 
     # 9. Доповіді
-    reports = parse_json_details(safe_get(row, c.NP_COL_NTR_DOPOVIDI_DETAILS_JSON, '[]'))
+    reports_raw = safe_get(row, c.NP_COL_NTR_DOPOVIDI_DETAILS_JSON, '[]')
+    # reports = parse_json_details(safe_get(row, c.NP_COL_NTR_DOPOVIDI_DETAILS_JSON),'[]')
+    reports = parse_json_details(reports_raw, [])
     report_points_map = {
         "Тези міжнародних конференцій": c.NP_POINTS_NTR_DOPOVIDI_TEZY_MIZHNARODNI,
         "Тези всеукраїнських конференцій": c.NP_POINTS_NTR_DOPOVIDI_TEZY_VSEUKRAINSKI,
         "Тези міжвузівських (вузівських) конференцій": c.NP_POINTS_NTR_DOPOVIDI_TEZY_MIZHVUZIVSKI
     }
-    for report in reports:
-        total += int(report.get("count", 0)) * report_points_map.get(report.get("type"), 0)
+    if isinstance(reports, dict):
+        reports = [reports]
+    if not isinstance(reports, list):
+        reports = []
+
+    for rep in reports:
+        t = (rep or {}).get("type", "")
+        cnt = int((rep or {}).get("count", 0) or 0)
+        total += cnt * report_points_map.get(t, 0)
+
+    # for report in reports:
+    #     total += int(report.get("count", 0)) * report_points_map.get(report.get("type"), 0)
 
     # 10, 11. Патенти, авторське право
     total += int(safe_get(row, c.NP_COL_NTR_PATENT_KILKIST, 0)) * c.NP_POINTS_NTR_PATENT
@@ -125,7 +189,7 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
 
     # 12, 13. Монографії
     # 12. Одноосібна монографія
-    mono_solo = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON, '[]'))
+    mono_solo = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON), [])
     for mono in mono_solo:
         sheets = float(mono.get("sheets", 0))
         if mono.get("type") == "в іноземному видавництві":
@@ -134,7 +198,7 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
             total += sheets * c.NP_POINTS_NTR_MONO_ODNOOSIBNA_UKRAINSKE_PER_SHEET
 
     # 13. Колективна монографія
-    mono_team = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON, '[]'))
+    mono_team = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON), [])
     for mono in mono_team:
         sheets = float(mono.get("sheets", 0))
         authors = max(1, int(mono.get("authors", 1)))
@@ -147,7 +211,7 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
     total += int(safe_get(row, c.NP_COL_NTR_RECENZ_MONO_KILKIST, 0)) * c.NP_POINTS_NTR_RECENZ_MONO
 
     # 15. Рецензування статей
-    reviews = parse_json_details(safe_get(row, c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON, '[]'))
+    reviews = parse_json_details(safe_get(row, c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON),[])
     review_points_map = {
         "Scopus, WoS, фахове видання категорії А": c.NP_POINTS_NTR_RECENZ_STATTI_SCOPUS_A,
         "фахове видання України категорії Б": c.NP_POINTS_NTR_RECENZ_STATTI_FAHOVE_B,
@@ -224,7 +288,7 @@ def calculate_np_or_scores(row: pd.Series) -> float:
     total += min(ekspert_points, c.NP_MAX_POINTS_OR_EKSPERT_KOMISII_PER_YEAR)
 
     # 6. Організація конференцій (з лімітом на кількість заходів)
-    conferences = parse_json_details(safe_get(row, c.NP_COL_OR_KONFERENTSII_DETAILS_JSON, '[]'))
+    conferences = parse_json_details(safe_get(row, c.NP_COL_OR_KONFERENTSII_DETAILS_JSON), [])
     conf_points_map = {
         "голова оргкомітету": c.NP_POINTS_OR_KONFERENTSII_GOLOVA_ORGKOM,
         "голова секції": c.NP_POINTS_OR_KONFERENTSII_GOLOVA_SEKCII,
@@ -241,7 +305,7 @@ def calculate_np_or_scores(row: pd.Series) -> float:
             total += int(conf.get("count", 0)) * conf_points_map.get(conf.get("role"), 0)
 
     # 7. Організація олімпіад (з лімітом на бали)
-    olympiads = parse_json_details(safe_get(row, c.NP_COL_OR_OLIMPIADY_DETAILS_JSON, '[]'))
+    olympiads = parse_json_details(safe_get(row, c.NP_COL_OR_OLIMPIADY_DETAILS_JSON), [])
     olymp_points_map = {
         "всеукраїнських та міжнародних": c.NP_POINTS_OR_OLIMPIADY_VSEUKR_MIZHNAR,
         "Військового інституту (факультету)": c.NP_POINTS_OR_OLIMPIADY_VIKNU,
@@ -253,7 +317,7 @@ def calculate_np_or_scores(row: pd.Series) -> float:
     total += min(olymp_points, c.NP_MAX_POINTS_OR_OLIMPIADY_PER_YEAR)
 
     # 8. Робота у редколегіях
-    editorials = parse_json_details(safe_get(row, c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON, '[]'))
+    editorials = parse_json_details(safe_get(row, c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON), [])
     editorial_points_map = {
         "виданнях, що індексуються в Scopus та WoS": c.NP_POINTS_OR_REDKOLEGIYI_SCOPUS_WOS,
         "в закордонних виданнях, індексованих наукометричними базами": c.NP_POINTS_OR_REDKOLEGIYI_ZAKORDONNI_INDEX,

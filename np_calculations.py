@@ -103,6 +103,8 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
         "Фахові України": c.NP_POINTS_NTR_STATTI_FAHOVI_UKRAINA,
         "Нефахові України": c.NP_POINTS_NTR_STATTI_NEFAHOVI_UKRAINA
     }
+    if isinstance(articles, int):
+        total = articles * 1
     for article in articles:
         total += int(article.get("count", 0)) * article_points_map.get(article.get("type"), 0)
 

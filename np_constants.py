@@ -173,15 +173,20 @@ NP_COL_NTR_PIDHOT_PEREMOZH_OBL_AKADEM_KILKIST = "НП_Нтр_20_підгот_п�
 NP_POINTS_NTR_PIDHOT_PEREMOZH_OBL_AKADEM = 10
 
 NP_COL_NTR_VYDANNYA_PIDRUCHNYK_KILKIST = "НП_Нтр_21_видання_підручник_кількість"
+NP_COL_NTR_VYDANNYA_PIDRUCHNYK_ID = "НП_Нтр_21_видання_підручник_ID"
 NP_POINTS_NTR_VYDANNYA_PIDRUCHNYK = 50
 NP_COL_NTR_VYDANNYA_POSIBNYK_KILKIST = "НП_Нтр_21_видання_посібник_кількість"
+NP_COL_NTR_VYDANNYA_POSIBNYK_ID = "НП_Нтр_21_видання_посібник_ID"
 NP_POINTS_NTR_VYDANNYA_POSIBNYK = 40
 NP_COL_NTR_VYDANNYA_DOVIDNYK_KILKIST = "НП_Нтр_21_видання_довідник_кількість"
+NP_COL_NTR_VYDANNYA_DOVIDNYK_ID = "НП_Нтр_21_видання_довідник_ID"
 NP_POINTS_NTR_VYDANNYA_DOVIDNYK = 30
 NP_COL_NTR_VYDANNYA_ZBIRNYK_KILKIST = "НП_Нтр_21_видання_збірник_кількість"
+NP_COL_NTR_VYDANNYA_ZBIRNYK_ID = "НП_Нтр_21_видання_збірник_ID"
 NP_POINTS_NTR_VYDANNYA_ZBIRNYK = 30
 
 NP_COL_NTR_HIRSCH_INDEX_VALUE = "НП_Нтр_22_індекс_Гірша_значення"
+NP_COL_NTR_HIRSCH_PROFILE_ID  = "НП_Нтр_22_Гірш_ID"
 NP_POINTS_NTR_HIRSCH_INDEX_MULTIPLIER = 10
 
 NP_COL_NTR_SPIKER_KILKIST = "НП_Нтр_23_спікер_кількість"
@@ -332,6 +337,7 @@ COLUMN_LABELS = {
     NP_COL_NTR_KERIVNYTSTVO_NDR_KURSANTIV_KILKIST: "Керівництво НДР курсантів (к-сть)",
 
     NP_COL_NTR_HIRSCH_INDEX_VALUE: "Індекс Гірша (значення)",
+    NP_COL_NTR_HIRSCH_PROFILE_ID:  "Індекс Гірша: профіль / ID / URL",
     NP_COL_NTR_SPIKER_KILKIST: "Спікер на наукових заходах (к-сть)",
 
     NP_COL_NTR_PIDHOT_PEREMOZH_VNUTRISH_KILKIST: "Підготовка переможців внутрішніх конкурсів (к-сть)",
@@ -341,9 +347,13 @@ COLUMN_LABELS = {
     NP_COL_NTR_PIDHOT_PEREMOZH_OBL_AKADEM_KILKIST: "Підготовка переможців обласних/академічних конкурсів (к-сть)",
 
     NP_COL_NTR_VYDANNYA_PIDRUCHNYK_KILKIST: "Видання підручника (к-сть)",
+    NP_COL_NTR_VYDANNYA_PIDRUCHNYK_ID: "Підручники (назва)",
     NP_COL_NTR_VYDANNYA_POSIBNYK_KILKIST: "Видання навчального посібника (к-сть)",
+    NP_COL_NTR_VYDANNYA_POSIBNYK_ID: "Навчальні посібники (назви)",
     NP_COL_NTR_VYDANNYA_DOVIDNYK_KILKIST: "Видання довідника (к-сть)",
+    NP_COL_NTR_VYDANNYA_DOVIDNYK_ID: "Довідники (назви)",
     NP_COL_NTR_VYDANNYA_ZBIRNYK_KILKIST: "Видання збірника (к-сть)",
+    NP_COL_NTR_VYDANNYA_ZBIRNYK_ID: "Збірники (назви)",
 
     NP_COL_NTR_RAZOVI_RADY_GOLOVA_KILKIST: "Разові спецради (голова, к-сть)",
     NP_COL_NTR_RAZOVI_RADY_CHLEN_KILKIST: "Разові спецради (член, к-сть)",

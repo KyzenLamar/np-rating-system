@@ -26,12 +26,140 @@ def with_pretty_headers(df: pd.DataFrame) -> pd.DataFrame:
     labels = getattr(c, "COLUMN_LABELS", {})
     return df.rename(columns=lambda col: labels.get(col, col))
 
+
 def favicon_data_uri(path: str = "favicon.ico") -> str:
     p = Path(path)
     with p.open("rb") as f:
         b64 = base64.b64encode(f.read()).decode("ascii")
     # MIME для .ico
     return f"data:image/x-icon;base64,{b64}"
+
+def ui_bool(label: str, df: pd.DataFrame, row_idx, col_key: str, pib: str, period: str):
+    """
+    Уніфікований чекбокс для бінарних полів.
+    - Глобально-унікальний key (щоб не злипався стан).
+    - Жорстке приведення до bool на вході, і запис 0/1 на виході.
+    """
+    st_key = f"chk::{col_key}::{pib}::{period}"
+
+    # поточне значення з DF → у чистий bool
+    raw = df.at[row_idx, col_key] if col_key in df.columns else 0
+    try:
+        base_bool = bool(int(raw)) if pd.notna(raw) else False
+    except Exception:
+        base_bool = False  # на всяк випадок
+
+    checked = st.checkbox(label, value=base_bool, key=st_key)
+    df.at[row_idx, col_key] = 1 if checked else 0
+    return checked
+
+def ui_bool_form(col_key: str, label: str) -> bool:
+    """
+    Чекбокс для форм введення (працює з st.session_state.np_form_data).
+    - Глобально-унікальний ключ на основі (col_key, ПІБ, період).
+    - Жорстко приводить збережене значення до bool, зберігає 0/1 у np_form_data.
+    """
+    import math
+
+    form_data = st.session_state.np_form_data
+
+    pib = str(form_data.get(c.COL_PIB, st.session_state.get("selected_pib", "")))
+    period = str(form_data.get(c.NP_COL_PERIOD, st.session_state.get("selected_period", "")))
+    st_key = f"chk::{col_key}::{pib}::{period}"
+
+    raw = form_data.get(col_key, 0)
+
+    # -> чистий bool
+    base = False
+    try:
+        if raw is None:
+            base = False
+        elif isinstance(raw, bool):
+            base = raw
+        elif isinstance(raw, (int, float)):
+            base = (not (isinstance(raw, float) and math.isnan(raw))) and (int(raw) != 0)
+        else:
+            s = str(raw).strip().lower()
+            base = s in ("1", "true", "так", "yes", "y", "on")
+    except Exception:
+        base = False
+
+    checked = st.checkbox(label, value=base, key=st_key)
+    form_data[col_key] = 1 if checked else 0
+    return checked
+
+def _form_keys_suffix():
+    fd = st.session_state.np_form_data
+    pib = str(fd.get(c.COL_PIB, st.session_state.get("selected_pib", "")))
+    period = str(fd.get(c.NP_COL_PERIOD, st.session_state.get("selected_period", "")))
+    return pib, period
+
+def ui_int_form(col_key: str, label: str, min_value: int = 0, step: int = 1) -> int:
+    """number_input для цілих у формі"""
+    import math
+    fd = st.session_state.np_form_data
+    pib, period = _form_keys_suffix()
+    st_key = f"num::{col_key}::{pib}::{period}"
+    raw = fd.get(col_key, 0)
+    try:
+        val = 0 if raw is None or (isinstance(raw, float) and math.isnan(raw)) else int(raw)
+    except Exception:
+        val = 0
+    out = st.number_input(label, value=val, min_value=min_value, step=step, key=st_key)
+    fd[col_key] = int(out)
+    return int(out)
+
+def ui_float_form(col_key: str, label: str, min_value: float = 0.0, step: float = 0.1) -> float:
+    """number_input для float у формі (напр., індекс Гірша)"""
+    import math
+    fd = st.session_state.np_form_data
+    pib, period = _form_keys_suffix()
+    st_key = f"numf::{col_key}::{pib}::{period}"
+    raw = fd.get(col_key, 0.0)
+    try:
+        val = 0.0 if raw is None or (isinstance(raw, float) and math.isnan(raw)) else float(raw)
+    except Exception:
+        val = 0.0
+    out = st.number_input(label, value=val, min_value=min_value, step=step, key=st_key, format="%.2f")
+    fd[col_key] = float(out)
+    return float(out)
+
+def ui_json_form(col_key: str, label: str, hint: str = "[]", height: int = 120) -> str:
+    """text_area для JSON-деталей (статті/доповіді/монографії/редколегії тощо) з легкою валідацією"""
+    import json
+    fd = st.session_state.np_form_data
+    pib, period = _form_keys_suffix()
+    st_key = f"json::{col_key}::{pib}::{period}"
+    val = fd.get(col_key, "[]")
+    if not isinstance(val, str):
+        try:
+            val = json.dumps(val, ensure_ascii=False)
+        except Exception:
+            val = "[]"
+    txt = st.text_area(label, value=val, key=st_key, height=height, placeholder=hint)
+    # м’яка валідація
+    try:
+        parsed = json.loads((txt or "").strip() or "[]")
+        ok = isinstance(parsed, (list, dict))
+    except Exception:
+        ok = False
+    if ok:
+        fd[col_key] = txt.strip()
+        st.caption("✅ JSON валідний")
+    else:
+        st.caption("⚠️ Очікується JSON (список або об’єкт). Напр.: [ {\"type\":\"Фахові України\",\"count\":2} ]")
+    return txt
+
+def ui_text_form(col_key: str, label: str, placeholder: str = "", max_chars: int = 300) -> str:
+    """text_input для форм (рядкові значення), унікальний key = col_key+pib+period"""
+    fd = st.session_state.np_form_data
+    pib = str(fd.get(c.COL_PIB, st.session_state.get("selected_pib", "")))
+    period = str(fd.get(c.NP_COL_PERIOD, st.session_state.get("selected_period", "")))
+    st_key = f"txt::{col_key}::{pib}::{period}"
+    val = fd.get(col_key, "")
+    out = st.text_input(label, value=str(val) if val is not None else "", key=st_key, placeholder=placeholder, max_chars=max_chars)
+    fd[col_key] = out.strip()
+    return fd[col_key]
 
 # --- CSS СТИЛІЗАЦІЯ ЗА БРЕНДБУКОМ ЗСУ ---
 
@@ -174,51 +302,101 @@ def render_np_pp_form():
         # --- Пара 1 & 2 ---
         col1, col2 = st.columns(2, border=True)
 
+        # with col1:
+        #     st.subheader("🎓 1. Науковий ступінь")
+        #     st.markdown("---")
+        #     st.session_state.np_form_data[c.NP_COL_PP_KVAL_KANDYDAT] = st.checkbox(
+        #         "Диплом кандидата наук (доктора філософії)",
+        #         value=st.session_state.np_form_data.get(c.NP_COL_PP_KVAL_KANDYDAT, False))
+        #     st.session_state.np_form_data[c.NP_COL_PP_KVAL_PHD_ABROAD] = st.checkbox("Закордонний диплом PhD",
+        #                                                                              value=st.session_state.np_form_data.get(
+        #                                                                                  c.NP_COL_PP_KVAL_PHD_ABROAD,
+        #                                                                                  False))
+        #     st.session_state.np_form_data[c.NP_COL_PP_KVAL_DOCTOR] = st.checkbox("Диплом доктора наук",
+        #                                                                          value=st.session_state.np_form_data.get(
+        #                                                                              c.NP_COL_PP_KVAL_DOCTOR, False))
         with col1:
             st.subheader("🎓 1. Науковий ступінь")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_KVAL_KANDYDAT] = st.checkbox(
-                "Диплом кандидата наук (доктора філософії)",
-                value=st.session_state.np_form_data.get(c.NP_COL_PP_KVAL_KANDYDAT, False))
-            st.session_state.np_form_data[c.NP_COL_PP_KVAL_PHD_ABROAD] = st.checkbox("Закордонний диплом PhD",
-                                                                                     value=st.session_state.np_form_data.get(
-                                                                                         c.NP_COL_PP_KVAL_PHD_ABROAD,
-                                                                                         False))
-            st.session_state.np_form_data[c.NP_COL_PP_KVAL_DOCTOR] = st.checkbox("Диплом доктора наук",
-                                                                                 value=st.session_state.np_form_data.get(
-                                                                                     c.NP_COL_PP_KVAL_DOCTOR, False))
+
+            st.session_state.np_form_data[c.NP_COL_PP_KVAL_KANDYDAT] = ui_bool_form(
+                c.NP_COL_PP_KVAL_KANDYDAT,
+                "Диплом кандидата наук (доктора філософії)"
+            )
+
+            st.session_state.np_form_data[c.NP_COL_PP_KVAL_PHD_ABROAD] = ui_bool_form(
+                c.NP_COL_PP_KVAL_PHD_ABROAD,
+                "Закордонний диплом PhD"
+            )
+
+            st.session_state.np_form_data[c.NP_COL_PP_KVAL_DOCTOR] = ui_bool_form(
+                c.NP_COL_PP_KVAL_DOCTOR,
+                "Диплом доктора наук"
+            )
+
+
+        # with col2:
+        #     st.subheader("👨🏽‍🎓 2. Вчене звання")
+        #     st.markdown("---")
+        #     st.session_state.np_form_data[c.NP_COL_PP_VZVAN_STARSH_DOSL] = st.checkbox("Старший дослідник (СНС)",
+        #                                                                                value=st.session_state.np_form_data.get(
+        #                                                                                    c.NP_COL_PP_VZVAN_STARSH_DOSL,
+        #                                                                                    False))
+        #     st.session_state.np_form_data[c.NP_COL_PP_VZVAN_DOTSENT] = st.checkbox("Доцент",
+        #                                                                            value=st.session_state.np_form_data.get(
+        #                                                                                c.NP_COL_PP_VZVAN_DOTSENT, False))
+        #     st.session_state.np_form_data[c.NP_COL_PP_VZVAN_PROFESOR] = st.checkbox("Професор",
+        #                                                                             value=st.session_state.np_form_data.get(
+        #                                                                                 c.NP_COL_PP_VZVAN_PROFESOR, False))
+        # st.markdown("---")
 
         with col2:
             st.subheader("👨🏽‍🎓 2. Вчене звання")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_VZVAN_STARSH_DOSL] = st.checkbox("Старший дослідник (СНС)",
-                                                                                       value=st.session_state.np_form_data.get(
-                                                                                           c.NP_COL_PP_VZVAN_STARSH_DOSL,
-                                                                                           False))
-            st.session_state.np_form_data[c.NP_COL_PP_VZVAN_DOTSENT] = st.checkbox("Доцент",
-                                                                                   value=st.session_state.np_form_data.get(
-                                                                                       c.NP_COL_PP_VZVAN_DOTSENT, False))
-            st.session_state.np_form_data[c.NP_COL_PP_VZVAN_PROFESOR] = st.checkbox("Професор",
-                                                                                    value=st.session_state.np_form_data.get(
-                                                                                        c.NP_COL_PP_VZVAN_PROFESOR, False))
+            st.session_state.np_form_data[c.NP_COL_PP_VZVAN_STARSH_DOSL] = ui_bool_form(
+                c.NP_COL_PP_VZVAN_STARSH_DOSL,
+                "Старший дослідник (СНС)",
+                )
+            st.session_state.np_form_data[c.NP_COL_PP_VZVAN_DOTSENT] = ui_bool_form(
+                c.NP_COL_PP_VZVAN_DOTSENT,
+                "Доцент",
+                )
+            st.session_state.np_form_data[c.NP_COL_PP_VZVAN_PROFESOR] = ui_bool_form(
+                c.NP_COL_PP_VZVAN_PROFESOR,
+                "Професор",
+                )
         st.markdown("---")
 
         # --- Пара 3 & 4 ---
 
         col1, col2 = st.columns(2, border=True)
+        # with col1:
+        #     st.subheader("🏅 3. Державна премія")
+        #     st.markdown("---")
+        #     st.session_state.np_form_data[c.NP_COL_PP_DERZH_PREMIYA] = st.checkbox("Лауреат Державної премії",
+        #                                                                            value=st.session_state.np_form_data.get(
+        #                                                                                c.NP_COL_PP_DERZH_PREMIYA, False))
+
         with col1:
             st.subheader("🏅 3. Державна премія")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_DERZH_PREMIYA] = st.checkbox("Лауреат Державної премії",
-                                                                                   value=st.session_state.np_form_data.get(
-                                                                                       c.NP_COL_PP_DERZH_PREMIYA, False))
+            st.session_state.np_form_data[c.NP_COL_PP_DERZH_PREMIYA] = ui_bool_form(
+                c.NP_COL_PP_DERZH_PREMIYA,
+                "Лауреат Державної премії"
+                )
 
         with col2:
+            # st.subheader("🎖️ 4. Почесне звання")
+            # st.markdown("---")
+            # st.session_state.np_form_data[c.NP_COL_PP_POCHESNE_ZVANNYA] = st.checkbox(
+            #     "Наявність почесного звання (Заслужений діяч, винахідник, юрист тощо)",
+            #     value=st.session_state.np_form_data.get(c.NP_COL_PP_POCHESNE_ZVANNYA, False))
+
             st.subheader("🎖️ 4. Почесне звання")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_POCHESNE_ZVANNYA] = st.checkbox(
-                "Наявність почесного звання (Заслужений діяч, винахідник, юрист тощо)",
-                value=st.session_state.np_form_data.get(c.NP_COL_PP_POCHESNE_ZVANNYA, False))
+            st.session_state.np_form_data[c.NP_COL_PP_POCHESNE_ZVANNYA] = ui_bool_form(
+                c.NP_COL_PP_POCHESNE_ZVANNYA,
+                "Наявність почесного звання (Заслужений діяч, винахідник, юрист тощо)")
 
         st.markdown("---")
 
@@ -226,82 +404,137 @@ def render_np_pp_form():
 
         col1, col2 = st.columns(2, border=True)
         with col1:
+            # st.subheader("🏆 5. Нагороди")
+            # st.markdown("---")
+            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VRU_KMU] = st.checkbox("Грамота ВРУ / КМУ",
+            #                                                                           value=st.session_state.np_form_data.get(
+            #                                                                               c.NP_COL_PP_NAGORODY_VRU_KMU,
+            #                                                                               False))
+            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_ORDER] = st.checkbox("Орден (державна нагорода)",
+            #                                                                         value=st.session_state.np_form_data.get(
+            #                                                                             c.NP_COL_PP_NAGORODY_ORDER, False))
+            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIDOVI] = st.checkbox(
+            #     "Заохочення від командувачів видів, родів військ (сил)",
+            #     value=st.session_state.np_form_data.get(c.NP_COL_PP_NAGORODY_VIDOVI, False))
+            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIKNU] = st.checkbox(
+            #     "Заохочення від начальника Військового інституту",
+            #     value=st.session_state.np_form_data.get(c.NP_COL_PP_NAGORODY_VIKNU, False))
+
             st.subheader("🏆 5. Нагороди")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VRU_KMU] = st.checkbox("Грамота ВРУ / КМУ",
-                                                                                      value=st.session_state.np_form_data.get(
-                                                                                          c.NP_COL_PP_NAGORODY_VRU_KMU,
-                                                                                          False))
-            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_ORDER] = st.checkbox("Орден (державна нагорода)",
-                                                                                    value=st.session_state.np_form_data.get(
-                                                                                        c.NP_COL_PP_NAGORODY_ORDER, False))
-            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIDOVI] = st.checkbox(
-                "Заохочення від командувачів видів, родів військ (сил)",
-                value=st.session_state.np_form_data.get(c.NP_COL_PP_NAGORODY_VIDOVI, False))
-            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIKNU] = st.checkbox(
-                "Заохочення від начальника Військового інституту",
-                value=st.session_state.np_form_data.get(c.NP_COL_PP_NAGORODY_VIKNU, False))
-
+            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VRU_KMU] = ui_bool_form(
+                c.NP_COL_PP_NAGORODY_VRU_KMU, "Грамота ВРУ / КМУ")
+            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_ORDER] = ui_bool_form(
+                c.NP_COL_PP_NAGORODY_ORDER, "Орден (державна нагорода)")
+            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIDOVI] = ui_bool_form(
+                c.NP_COL_PP_NAGORODY_VIDOVI, "Заохочення від командувачів видів, родів військ (сил)")
+            st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIKNU] = ui_bool_form(
+                c.NP_COL_PP_NAGORODY_VIKNU, "Заохочення від начальника Військового інституту")
 
         with col2:
+            # st.subheader("🏛️ 6. Членство в академіях наук")
+            # st.markdown("---")
+            # st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN] = st.checkbox("Дійсний член НАНУ",
+            #                                                                    value=st.session_state.np_form_data.get(
+            #                                                                        c.NP_COL_PP_NAN_CHLEN, False))
+            # st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN_KOR] = st.checkbox("Член-кореспондент НАНУ",
+            #                                                                        value=st.session_state.np_form_data.get(
+            #                                                                            c.NP_COL_PP_NAN_CHLEN_KOR, False))
+            # st.session_state.np_form_data[c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI] = st.checkbox("Член галузевої академії наук",
+            #                                                                                 value=st.session_state.np_form_data.get(
+            #                                                                                     c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI,
+            #                                                                                     False))
+            # st.session_state.np_form_data[c.NP_COL_PP_NAN_HROMADSKI] = st.checkbox("Член наукової громадської організації",
+            #                                                                        value=st.session_state.np_form_data.get(
+            #                                                                            c.NP_COL_PP_NAN_HROMADSKI, False))
             st.subheader("🏛️ 6. Членство в академіях наук")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN] = st.checkbox("Дійсний член НАНУ",
-                                                                               value=st.session_state.np_form_data.get(
-                                                                                   c.NP_COL_PP_NAN_CHLEN, False))
-            st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN_KOR] = st.checkbox("Член-кореспондент НАНУ",
-                                                                                   value=st.session_state.np_form_data.get(
-                                                                                       c.NP_COL_PP_NAN_CHLEN_KOR, False))
-            st.session_state.np_form_data[c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI] = st.checkbox("Член галузевої академії наук",
-                                                                                            value=st.session_state.np_form_data.get(
-                                                                                                c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI,
-                                                                                                False))
-            st.session_state.np_form_data[c.NP_COL_PP_NAN_HROMADSKI] = st.checkbox("Член наукової громадської організації",
-                                                                                   value=st.session_state.np_form_data.get(
-                                                                                       c.NP_COL_PP_NAN_HROMADSKI, False))
+            st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN] = ui_bool_form(
+                c.NP_COL_PP_NAN_CHLEN, "Дійсний член НАНУ")
+            st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN_KOR] = ui_bool_form(
+                c.NP_COL_PP_NAN_CHLEN_KOR, "Член-кореспондент НАНУ")
+            st.session_state.np_form_data[c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI] = ui_bool_form(c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI,
+                "Член галузевої академії наук")
+            st.session_state.np_form_data[c.NP_COL_PP_NAN_HROMADSKI] = ui_bool_form(c.NP_COL_PP_NAN_HROMADSKI,
+                "Член наукової громадської організації")
         st.markdown("---")
 
         # --- Пара 7 & 8 ---
 
         col1, col2 = st.columns(2, border=True)
         with col1:
+            # st.subheader("🛡️ 7. Статус УБД")
+            # st.markdown("---")
+            # st.session_state.np_form_data[c.NP_COL_PP_STATUS_UBD] = st.checkbox("Наявність статусу учасника бойових дій",
+            #                                                                     value=st.session_state.np_form_data.get(
+            #                                                                         c.NP_COL_PP_STATUS_UBD, False))
+
             st.subheader("🛡️ 7. Статус УБД")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_STATUS_UBD] = st.checkbox("Наявність статусу учасника бойових дій",
-                                                                                value=st.session_state.np_form_data.get(
-                                                                                    c.NP_COL_PP_STATUS_UBD, False))
+            st.session_state.np_form_data[c.NP_COL_PP_STATUS_UBD] = ui_bool_form(c.NP_COL_PP_STATUS_UBD,
+                "Наявність статусу учасника бойових дій")
 
         with col2:
+            # st.subheader("🌐 8. Участь у міжнародних військових навчаннях НАТО")
+            # st.markdown("---")
+            # st.session_state.np_form_data[c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST] = st.number_input("Кількість навчань",
+            #                                                                                      min_value=0, step=1,
+            #                                                                                      value=int(
+            #                                                                                          st.session_state.np_form_data.get(
+            #                                                                                              c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST,
+            #                                                                                              0)))
+
             st.subheader("🌐 8. Участь у міжнародних військових навчаннях НАТО")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST] = st.number_input("Кількість навчань",
-                                                                                                 min_value=0, step=1,
-                                                                                                 value=int(
-                                                                                                     st.session_state.np_form_data.get(
-                                                                                                         c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST,
-                                                                                                         0)))
+            st.session_state.np_form_data[c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST] = ui_int_form(
+                c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST,
+                "Кількість навчань",
+                min_value=0,
+                step=1
+            )
         st.markdown("---")
 
         # --- Пара 9 & 10 ---
 
         col1, col2 = st.columns(2, border=True)
         with col1:
+            # st.subheader("👨‍💻 9. Член воєнно-наукової групи на ОКП бригади")
+            # st.markdown("---")
+            # st.session_state.np_form_data[c.NP_COL_PP_VNG_OKP_DNIV] = st.number_input("Кількість днів у складі ВНГ",
+            #                                                                           min_value=0, step=1, value=int(
+            #         st.session_state.np_form_data.get(c.NP_COL_PP_VNG_OKP_DNIV, 0)))
+
             st.subheader("👨‍💻 9. Член воєнно-наукової групи на ОКП бригади")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_PP_VNG_OKP_DNIV] = st.number_input("Кількість днів у складі ВНГ",
-                                                                                      min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_PP_VNG_OKP_DNIV, 0)))
+            st.session_state.np_form_data[c.NP_COL_PP_VNG_OKP_DNIV] = ui_int_form(
+                c.NP_COL_PP_VNG_OKP_DNIV,
+                "Кількість днів у складі ВНГ",
+                min_value=0, step=1
+            )
 
 
         with col2:
+            # st.subheader("🗣️ 10. Рівень володіння іноземною мовою")
+            # st.markdown("---")
+            # lang_levels = list(c.NP_POINTS_PP_INOZEMNA_MOVA.keys())
+            # current_level = st.session_state.np_form_data.get(c.NP_COL_PP_INOZEMNA_MOVA_RIVEN, "Немає")
+            # st.session_state.np_form_data[c.NP_COL_PP_INOZEMNA_MOVA_RIVEN] = st.selectbox("Рівень СМП (CEFR)",
+            #                                                                               options=lang_levels,
+            #                                                                               index=lang_levels.index(
+            #                                                                                   current_level))
+
             st.subheader("🗣️ 10. Рівень володіння іноземною мовою")
             st.markdown("---")
             lang_levels = list(c.NP_POINTS_PP_INOZEMNA_MOVA.keys())
-            current_level = st.session_state.np_form_data.get(c.NP_COL_PP_INOZEMNA_MOVA_RIVEN, "Немає")
-            st.session_state.np_form_data[c.NP_COL_PP_INOZEMNA_MOVA_RIVEN] = st.selectbox("Рівень СМП (CEFR)",
-                                                                                          options=lang_levels,
-                                                                                          index=lang_levels.index(
-                                                                                              current_level))
+            current_level = st.session_state.np_form_data.get(
+                c.NP_COL_PP_INOZEMNA_MOVA_RIVEN,
+                lang_levels[0] if lang_levels else "Немає"
+            )
+            st.session_state.np_form_data[c.NP_COL_PP_INOZEMNA_MOVA_RIVEN] = st.selectbox(
+                "Рівень СМП (CEFR)",
+                options=lang_levels,
+                index=lang_levels.index(current_level) if current_level in lang_levels else 0
+            )
 
 def render_np_ntr_form():
     with st.expander("Додаток 1.3: Наукова діяльність (НТР)", expanded=False):
@@ -311,21 +544,22 @@ def render_np_ntr_form():
         with col1:
             st.subheader("🎓 1. Завершення та захист")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_ZAHYST_DOCTORSKA] = st.checkbox(
-                "Захист докторської дисертації",
-                value=st.session_state.np_form_data.get(c.NP_COL_NTR_ZAHYST_DOCTORSKA, False))
-            st.session_state.np_form_data[c.NP_COL_NTR_ZAHYST_PHD] = st.checkbox(
-                "Захист дисертації доктора філософії",
-                value=st.session_state.np_form_data.get(c.NP_COL_NTR_ZAHYST_PHD, False))
+            st.session_state.np_form_data[c.NP_COL_NTR_ZAHYST_DOCTORSKA] = ui_bool_form(
+                c.NP_COL_NTR_ZAHYST_DOCTORSKA, "Захист докторської дисертації"
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_ZAHYST_PHD] = ui_bool_form(
+                c.NP_COL_NTR_ZAHYST_PHD, "Захист дисертації доктора філософії"
+            )
+
         with col2:
             st.subheader("🧑‍🏫 2. Наукове консультування")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_NAUK_KONSULT_ADYUNKT_KILKIST] = st.number_input(
-                "К-сть ад’юнктів (аспірантів)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_NAUK_KONSULT_ADYUNKT_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_NAUK_KONSULT_DOCTORANT_KILKIST] = st.number_input(
-                "К-сть докторантів", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_NAUK_KONSULT_DOCTORANT_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_NAUK_KONSULT_ADYUNKT_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_NAUK_KONSULT_ADYUNKT_KILKIST, "К-сть ад’юнктів (аспірантів)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_NAUK_KONSULT_DOCTORANT_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_NAUK_KONSULT_DOCTORANT_KILKIST, "К-сть докторантів", min_value=0, step=1
+            )
 
         st.markdown("---")
 
@@ -334,21 +568,23 @@ def render_np_ntr_form():
         with col1:
             st.subheader("🧐 3. Опонування дисертацій")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_OPONUVANNYA_DOCTOR_NAUK_KILKIST] = st.number_input(
-                "К-сть дисертацій доктора наук", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_OPONUVANNYA_DOCTOR_NAUK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_OPONUVANNYA_PHD_KILKIST] = st.number_input(
-                "К-сть дисертацій доктора філософії", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_OPONUVANNYA_PHD_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_OPONUVANNYA_DOCTOR_NAUK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_OPONUVANNYA_DOCTOR_NAUK_KILKIST, "К-сть дисертацій доктора наук", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_OPONUVANNYA_PHD_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_OPONUVANNYA_PHD_KILKIST, "К-сть дисертацій доктора філософії", min_value=0, step=1
+            )
+
         with col2:
             st.subheader("✍️ 4. Рецензування дисертацій")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_DYSERT_DOCTOR_NAUK_KILKIST] = st.number_input(
-                "К-сть рецензій на дис. доктора наук", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_RECENZ_DYSERT_DOCTOR_NAUK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_DYSERT_PHD_KILKIST] = st.number_input(
-                "К-сть рецензій на дис. доктора філософії", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_RECENZ_DYSERT_PHD_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_DYSERT_DOCTOR_NAUK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_RECENZ_DYSERT_DOCTOR_NAUK_KILKIST, "К-сть рецензій на дис. доктора наук",
+                min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_DYSERT_PHD_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_RECENZ_DYSERT_PHD_KILKIST, "К-сть рецензій на дис. PhD", min_value=0, step=1
+            )
 
         st.markdown("---")
 
@@ -357,24 +593,25 @@ def render_np_ntr_form():
         with col1:
             st.subheader("✅ 5. Підготовка акту впровадження")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_AKTU_VPROVADZH_KILKIST] = st.number_input(
-                "Кількість актів (голова комісії)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_PIDHOT_AKTU_VPROVADZH_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_AKTU_VPROVADZH_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PIDHOT_AKTU_VPROVADZH_KILKIST, "Кількість актів (голова комісії)", min_value=0, step=1
+            )
+
         with col2:
             st.subheader("🔬 6. Виконання НДР")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_NDR_DERZH_KERIVNYK_KILKIST] = st.number_input(
-                "НДР держ. (керівник)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_NDR_DERZH_KERIVNYK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_NDR_DERZH_VYKONAVETS_KILKIST] = st.number_input(
-                "НДР держ. (виконавець)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_NDR_DERZH_VYKONAVETS_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_NDR_MIZHNAR_KERIVNYK_KILKIST] = st.number_input(
-                "НДР міжнар. (керівник)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_NDR_MIZHNAR_KERIVNYK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_NDR_MIZHNAR_VYKONAVETS_KILKIST] = st.number_input(
-                "НДР міжнар. (виконавець)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_NDR_MIZHNAR_VYKONAVETS_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_NDR_DERZH_KERIVNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_NDR_DERZH_KERIVNYK_KILKIST, "НДР держ. (керівник)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_NDR_DERZH_VYKONAVETS_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_NDR_DERZH_VYKONAVETS_KILKIST, "НДР держ. (виконавець)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_NDR_MIZHNAR_KERIVNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_NDR_MIZHNAR_KERIVNYK_KILKIST, "НДР міжнар. (керівник)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_NDR_MIZHNAR_VYKONAVETS_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_NDR_MIZHNAR_VYKONAVETS_KILKIST, "НДР міжнар. (виконавець)", min_value=0, step=1
+            )
 
         st.markdown("---")
 
@@ -383,23 +620,21 @@ def render_np_ntr_form():
         with col1:
             st.subheader("📝 7. Виконання ОЗ / Розробка стандарту")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_OZ_VIDPOV_VYKONAVETS_KILKIST] = st.number_input(
-                "ОЗ (відповідальний)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_OZ_VIDPOV_VYKONAVETS_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_OZ_VYKONAVETS_KILKIST] = st.number_input(
-                "ОЗ (виконавець)",
-                min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_OZ_VYKONAVETS_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_STANDART_KERIVNYK_KILKIST] = st.number_input(
-                "Стандарт (керівник)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_STANDART_KERIVNYK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_STANDART_VIDPOV_VYKONAVETS_KILKIST] = st.number_input(
-                "Стандарт (відповідальний)", min_value=0, step=1,
-                value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_NTR_STANDART_VIDPOV_VYKONAVETS_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_STANDART_VYKONAVETS_KILKIST] = st.number_input(
-                "Стандарт (виконавець)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_STANDART_VYKONAVETS_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_OZ_VIDPOV_VYKONAVETS_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_OZ_VIDPOV_VYKONAVETS_KILKIST, "ОЗ (відповідальний виконавець)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_OZ_VYKONAVETS_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_OZ_VYKONAVETS_KILKIST, "ОЗ (виконавець)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_STANDART_KERIVNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_STANDART_KERIVNYK_KILKIST, "Стандарт (керівник)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_STANDART_VIDPOV_VYKONAVETS_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_STANDART_VIDPOV_VYKONAVETS_KILKIST, "Стандарт (відповідальний)", min_value=0, step=1
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_STANDART_VYKONAVETS_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_STANDART_VYKONAVETS_KILKIST, "Стандарт (виконавець)", min_value=0, step=1
+            )
         with col2:
             st.subheader("📄 8. Підготовка та видання наукової статті")
             st.markdown("---")
@@ -420,15 +655,15 @@ def render_np_ntr_form():
                     st.rerun()
                 else:
                     st.warning("Оберіть тип статті перш ніж дотати статтю")
-        if st.session_state.np_ntr_articles_list:
-            st.write("Додані статті:")
-            for i, article in enumerate(st.session_state.np_ntr_articles_list):
-                cols = st.columns([3, 1, 1])
-                cols[0].write(f"**Тип:** {article['type']}")
-                cols[1].write(f"**К-сть:** {article['count']}")
-                if cols[2].button("🗑️", key=f"np_del_article_{i}"):
-                    st.session_state.np_ntr_articles_list.pop(i)
-                    st.rerun()
+            if st.session_state.np_ntr_articles_list:
+                st.write("Додані статті:")
+                for i, article in enumerate(st.session_state.np_ntr_articles_list):
+                    cols = st.columns([3, 1, 1])
+                    cols[0].write(f"**Тип:** {article['type']}")
+                    cols[1].write(f"**К-сть:** {article['count']}")
+                    if cols[2].button("🗑️", key=f"np_del_article_{i}"):
+                        st.session_state.np_ntr_articles_list.pop(i)
+                        st.rerun()
 
         st.markdown("---")
         # --- Пара 9 & 10 ---
@@ -452,28 +687,23 @@ def render_np_ntr_form():
                     st.rerun()
                 else:
                     st.warning("Оберіть тип доповіді перш ніж додати доповідь")
-        if st.session_state.np_ntr_reports_list:
-            st.write("Додані доповіді:")
-            for i, report in enumerate(st.session_state.np_ntr_reports_list):
-                cols_rep_disp = st.columns([3, 1, 1])
-                cols_rep_disp[0].write(f"**Тип:** {report['type']}")
-                cols_rep_disp[1].write(f"**К-сть:** {report['count']}")
-                if cols_rep_disp[2].button("🗑️", key=f"np_del_report_{i}"):
-                    st.session_state.np_ntr_reports_list.pop(i)
-                    st.rerun()
+            if st.session_state.np_ntr_reports_list:
+                st.write("Додані доповіді:")
+                for i, report in enumerate(st.session_state.np_ntr_reports_list):
+                    cols_rep_disp = st.columns([3, 1, 1])
+                    cols_rep_disp[0].write(f"**Тип:** {report['type']}")
+                    cols_rep_disp[1].write(f"**К-сть:** {report['count']}")
+                    if cols_rep_disp[2].button("🗑️", key=f"np_del_report_{i}"):
+                        st.session_state.np_ntr_reports_list.pop(i)
+                        st.rerun()
         with col2:
             st.subheader("💡 10. Отримання патенту / моделі")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_PATENT_KILKIST] = st.number_input("Кількість патентів",
-                                                                                         min_value=0, step=1,
-                                                                                         value=int(
-                                                                                             st.session_state.np_form_data.get(
-                                                                                                 c.NP_COL_NTR_PATENT_KILKIST,
-                                                                                                 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_PATENT_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PATENT_KILKIST, "Кількість патентів", min_value=0, step=1)
 
-            st.session_state.np_form_data[c.NP_COL_NTR_KORYSNA_MODEL_KILKIST] = st.number_input(
-                "Кількість корисних моделей", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_KORYSNA_MODEL_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_KORYSNA_MODEL_KILKIST] = ui_int_form(c.NP_COL_NTR_KORYSNA_MODEL_KILKIST,
+                "Кількість корисних моделей", min_value=0, step=1)
 
         st.markdown("---")
         # --- Пара 11 & 12 ---
@@ -481,9 +711,9 @@ def render_np_ntr_form():
         with col1:
             st.subheader("©️ 11. Авторське право")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_AVTORSKE_PRAVO_KILKIST] = st.number_input(
-                "Кількість свідоцтв", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_AVTORSKE_PRAVO_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_AVTORSKE_PRAVO_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_AVTORSKE_PRAVO_KILKIST,
+                "Кількість свідоцтв", min_value=0, step=1)
         with col2:
             st.subheader("📖 12. Видання одноосібної монографії")
             st.markdown("---")
@@ -502,15 +732,15 @@ def render_np_ntr_form():
                     st.rerun()
                 else:
                     st.warning("Оберіть тип видавництва перш ніж додавати монографію.")
-        if st.session_state.np_ntr_mono_solo_list:
-            st.write("Додані монографії:")
-            for i, mono in enumerate(st.session_state.np_ntr_mono_solo_list):
-                cols_mono_s_disp = st.columns([3, 1, 1])
-                cols_mono_s_disp[0].write(f"**Тип:** {mono['type']}")
-                cols_mono_s_disp[1].write(f"**Аркушів:** {mono['sheets']}")
-                if cols_mono_s_disp[2].button("🗑️", key=f"np_del_mono_solo_{i}"):
-                    st.session_state.np_ntr_mono_solo_list.pop(i)
-                    st.rerun()
+            if st.session_state.np_ntr_mono_solo_list:
+                st.write("Додані монографії:")
+                for i, mono in enumerate(st.session_state.np_ntr_mono_solo_list):
+                    cols_mono_s_disp = st.columns([3, 1, 1])
+                    cols_mono_s_disp[0].write(f"**Тип:** {mono['type']}")
+                    cols_mono_s_disp[1].write(f"**Аркушів:** {mono['sheets']}")
+                    if cols_mono_s_disp[2].button("🗑️", key=f"np_del_mono_solo_{i}"):
+                        st.session_state.np_ntr_mono_solo_list.pop(i)
+                        st.rerun()
 
         st.markdown("---")
         # --- Пара 13 & 14 ---
@@ -556,24 +786,23 @@ def render_np_ntr_form():
                 else:
                     st.warning("Оберіть тип видавництва перш ніж додавати розділ.")
 
-        if st.session_state.np_ntr_mono_team_list:
-            st.write("Додані розділи:")
-            for i, mono in enumerate(st.session_state.np_ntr_mono_team_list):
-                cols_mono_t_disp = st.columns([2, 1, 1, 1])
-                cols_mono_t_disp[0].write(f"**Тип:** {mono['type']}")
-                cols_mono_t_disp[1].write(f"**Аркушів:** {mono['sheets']}")
-                cols_mono_t_disp[2].write(f"**Співавторів:** {mono['authors']}")
-                if cols_mono_t_disp[3].button("🗑️", key=f"np_del_mono_team_{i}"):
-                    st.session_state.np_ntr_mono_team_list.pop(i)
-                    st.rerun()
+            if st.session_state.np_ntr_mono_team_list:
+                st.write("Додані розділи:")
+                for i, mono in enumerate(st.session_state.np_ntr_mono_team_list):
+                    cols_mono_t_disp = st.columns([2, 1, 1, 1])
+                    cols_mono_t_disp[0].write(f"**Тип:** {mono['type']}")
+                    cols_mono_t_disp[1].write(f"**Аркушів:** {mono['sheets']}")
+                    cols_mono_t_disp[2].write(f"**Співавторів:** {mono['authors']}")
+                    if cols_mono_t_disp[3].button("🗑️", key=f"np_del_mono_team_{i}"):
+                        st.session_state.np_ntr_mono_team_list.pop(i)
+                        st.rerun()
 
         with col2:
             st.subheader("🔎 14. Рецензування монографії / підручника")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_MONO_KILKIST] = st.number_input(
-                "Кількість рецензій",
-                min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_RECENZ_MONO_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_MONO_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_RECENZ_MONO_KILKIST,
+                "Кількість рецензій", min_value=0, step=1)
 
         st.markdown("---")
 
@@ -599,22 +828,21 @@ def render_np_ntr_form():
                     st.rerun()
                 else:
                     st.warning("Оберіть тип видання перщ ніж додати рецензію")
-        if st.session_state.np_ntr_review_articles_list:
-            st.write("Додані рецензії:")
-            for i, review in enumerate(st.session_state.np_ntr_review_articles_list):
-                cols_rev_disp = st.columns([3, 1, 1])
-                cols_rev_disp[0].write(f"**Тип:** {review['type']}")
-                cols_rev_disp[1].write(f"**К-сть:** {review['count']}")
-                if cols_rev_disp[2].button("🗑️", key=f"np_del_review_{i}"):
-                    st.session_state.np_ntr_review_articles_list.pop(i)
-                    st.rerun()
+            if st.session_state.np_ntr_review_articles_list:
+                st.write("Додані рецензії:")
+                for i, review in enumerate(st.session_state.np_ntr_review_articles_list):
+                    cols_rev_disp = st.columns([3, 1, 1])
+                    cols_rev_disp[0].write(f"**Тип:** {review['type']}")
+                    cols_rev_disp[1].write(f"**К-сть:** {review['count']}")
+                    if cols_rev_disp[2].button("🗑️", key=f"np_del_review_{i}"):
+                        st.session_state.np_ntr_review_articles_list.pop(i)
+                        st.rerun()
         with col2:
             st.subheader("👨‍🏫 16. Керівництво науковою роботою курсантів")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_KERIVNYTSTVO_NDR_KURSANTIV_KILKIST] = st.number_input(
-                "Кількість документів (статті, тези, роботи на конкурс тощо)", min_value=0, step=1,
-                value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_NTR_KERIVNYTSTVO_NDR_KURSANTIV_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_KERIVNYTSTVO_NDR_KURSANTIV_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_KERIVNYTSTVO_NDR_KURSANTIV_KILKIST,
+                "Кількість документів (статті, тези, роботи на конкурс тощо)", min_value=0, step=1)
 
         st.markdown("---")
         # --- Пара 17 & 18 ---
@@ -622,18 +850,18 @@ def render_np_ntr_form():
         with col1:
             st.subheader("🏆 17. Підготовка переможців конкурсів")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_VSEUKR_KILKIST] = st.number_input(
-                "К-сть переможців Всеукраїнського конкурсу", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_PIDHOT_PEREMOZH_VSEUKR_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_VNUTRISH_KILKIST] = st.number_input(
-                "К-сть переможців внутрішнього конкурсу", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_PIDHOT_PEREMOZH_VNUTRISH_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_VSEUKR_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PIDHOT_PEREMOZH_VSEUKR_KILKIST,
+                "К-сть переможців Всеукраїнського конкурсу", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_VNUTRISH_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PIDHOT_PEREMOZH_VNUTRISH_KILKIST,
+                "К-сть переможців внутрішнього конкурсу", min_value=0, step=1)
         with col2:
             st.subheader("🏅 18. Підготовка переможців олімпіад")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_OLIMPIADA_KILKIST] = st.number_input(
-                "К-сть переможців міжнародних/Всеукраїнських олімпіад", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_PIDHOT_PEREMOZH_OLIMPIADA_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_OLIMPIADA_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PIDHOT_PEREMOZH_OLIMPIADA_KILKIST,
+                "К-сть переможців міжнародних/Всеукраїнських олімпіад", min_value=0, step=1)
 
         st.markdown("---")
         # --- Пара 19 & 20 ---
@@ -641,16 +869,15 @@ def render_np_ntr_form():
         with col1:
             st.subheader("🥇 19. Підготовка команди-переможниці")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_KOMANDY_PEREMOZH_KILKIST] = st.number_input(
-                "К-сть команд-переможниць змагань", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_PIDHOT_KOMANDY_PEREMOZH_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_KOMANDY_PEREMOZH_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PIDHOT_KOMANDY_PEREMOZH_KILKIST,
+                "К-сть команд-переможниць змагань", min_value=0, step=1)
         with col2:
             st.subheader("🎖️ 20. Підготовка переможців обласних конкурсів")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_OBL_AKADEM_KILKIST] = st.number_input(
-                "К-сть переможців обласного, академічного конкурсу", min_value=0, step=1,
-                value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_NTR_PIDHOT_PEREMOZH_OBL_AKADEM_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_PIDHOT_PEREMOZH_OBL_AKADEM_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_PIDHOT_PEREMOZH_OBL_AKADEM_KILKIST,
+                "К-сть переможців обласного, академічного конкурсу", min_value=0, step=1)
 
         st.markdown("---")
         # --- Пара 21 & 22 ---
@@ -658,35 +885,40 @@ def render_np_ntr_form():
         with col1:
             st.subheader("📔 21. Видавнича діяльність")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_PIDRUCHNYK_KILKIST] = st.number_input(
-                "Підручники",
-                min_value=0,
-                step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_VYDANNYA_PIDRUCHNYK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_POSIBNYK_KILKIST] = st.number_input(
-                "Навчальні посібники", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_VYDANNYA_POSIBNYK_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_DOVIDNYK_KILKIST] = st.number_input("Довідники",
-                                                                                                    min_value=0,
-                                                                                                    step=1,
-                                                                                                    value=int(
-                                                                                                        st.session_state.np_form_data.get(
-                                                                                                            c.NP_COL_NTR_VYDANNYA_DOVIDNYK_KILKIST,
-                                                                                                            0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_ZBIRNYK_KILKIST] = st.number_input("Збірники",
-                                                                                                   min_value=0,
-                                                                                                   step=1,
-                                                                                                   value=int(
-                                                                                                       st.session_state.np_form_data.get(
-                                                                                                           c.NP_COL_NTR_VYDANNYA_ZBIRNYK_KILKIST,
-                                                                                                           0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_PIDRUCHNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_VYDANNYA_PIDRUCHNYK_KILKIST,
+                "Підручники", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_PIDRUCHNYK_ID] = ui_text_form(
+                c.NP_COL_NTR_VYDANNYA_PIDRUCHNYK_ID, "Назва підручника"
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_POSIBNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_VYDANNYA_POSIBNYK_KILKIST,
+                "Навчальні посібники", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_POSIBNYK_ID] = ui_text_form(
+                c.NP_COL_NTR_VYDANNYA_POSIBNYK_ID, "Назва посібника"
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_DOVIDNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_VYDANNYA_DOVIDNYK_KILKIST,
+                "Довідники", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_DOVIDNYK_ID] = ui_text_form(
+                c.NP_COL_NTR_VYDANNYA_DOVIDNYK_ID, "Назва довідника"
+            )
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_ZBIRNYK_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_VYDANNYA_ZBIRNYK_KILKIST, "Збірники", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_VYDANNYA_ZBIRNYK_ID] = ui_text_form(
+                c.NP_COL_NTR_VYDANNYA_ZBIRNYK_ID, "Назва збірника"
+            )
         with col2:
             st.subheader("📈 22. Індекс Гірша (Scopus/WoS)")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_HIRSCH_INDEX_VALUE] = st.number_input(
+            st.session_state.np_form_data[c.NP_COL_NTR_HIRSCH_INDEX_VALUE] = ui_int_form(
+                c.NP_COL_NTR_HIRSCH_INDEX_VALUE,
                 "Значення індексу 'n'",
-                min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_HIRSCH_INDEX_VALUE, 0)))
+                min_value=0, step=1)
+
+            # Нове поле для ID Гірша
+            st.session_state.np_form_data[c.NP_COL_NTR_HIRSCH_PROFILE_ID] = ui_text_form(
+                c.NP_COL_NTR_HIRSCH_PROFILE_ID, "ID профілю (Scopus / WoS)")
 
         st.markdown("---")
 
@@ -695,28 +927,25 @@ def render_np_ntr_form():
         with col1:
             st.subheader("🗣️ 23. Спікер за запрошенням")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_SPIKER_KILKIST] = st.number_input("Кількість заходів",
-                                                                                         min_value=0, step=1,
-                                                                                         value=int(
-                                                                                             st.session_state.np_form_data.get(
-                                                                                                 c.NP_COL_NTR_SPIKER_KILKIST,
-                                                                                                 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_SPIKER_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_SPIKER_KILKIST, "Кількість заходів",
+                min_value=0, step=1)
         with col2:
             # --- Блок 24-25, окремо, оскільки він один ---
             st.subheader("🏛️ 24-25. Робота в радах")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_NTR_RAZOVI_RADY_GOLOVA_KILKIST] = st.number_input(
-                "Разові ради (голова)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_RAZOVI_RADY_GOLOVA_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_RAZOVI_RADY_CHLEN_KILKIST] = st.number_input(
-                "Разові ради (член)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_RAZOVI_RADY_CHLEN_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_SPEC_RADY_KAND_KILKIST] = st.number_input(
-                "Спец. ради (канд.)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_SPEC_RADY_KAND_KILKIST, 0)))
-            st.session_state.np_form_data[c.NP_COL_NTR_SPEC_RADY_DOCTOR_KILKIST] = st.number_input(
-                "Спец. ради (докт.)", min_value=0, step=1,
-                value=int(st.session_state.np_form_data.get(c.NP_COL_NTR_SPEC_RADY_DOCTOR_KILKIST, 0)))
+            st.session_state.np_form_data[c.NP_COL_NTR_RAZOVI_RADY_GOLOVA_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_RAZOVI_RADY_GOLOVA_KILKIST,
+                "Разові ради (голова)", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_RAZOVI_RADY_CHLEN_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_RAZOVI_RADY_CHLEN_KILKIST,
+                "Разові ради (член)", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_SPEC_RADY_KAND_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_SPEC_RADY_KAND_KILKIST,
+                "Спец. ради (канд.)", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_NTR_SPEC_RADY_DOCTOR_KILKIST] = ui_int_form(
+                c.NP_COL_NTR_SPEC_RADY_DOCTOR_KILKIST,
+                "Спец. ради (докт.)", min_value=0, step=1)
 
 
 def render_np_or_form():
@@ -727,17 +956,15 @@ def render_np_or_form():
         with col1:
             st.subheader("🧭 1. Військово-професійна орієнтація")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_VIYSK_PROF_ORIENT_DNIV] = st.number_input(
+            st.session_state.np_form_data[c.NP_COL_OR_VIYSK_PROF_ORIENT_DNIV] = ui_int_form(c.NP_COL_OR_VIYSK_PROF_ORIENT_DNIV,
                 "Кількість днів відряджень",
-                min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_VIYSK_PROF_ORIENT_DNIV, 0)), key="num_OR_VIYSK_PROF_ORIENT_DNIV")
+                min_value=0, step=1)
         with col2:
             st.subheader("🤝 2. Робота в комісіях МОН")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_KOMISII_MON_ZAHODIV] = st.number_input(
+            st.session_state.np_form_data[c.NP_COL_OR_KOMISII_MON_ZAHODIV] = ui_int_form(c.NP_COL_OR_KOMISII_MON_ZAHODIV,
                 "Кількість заходів",
-                min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_KOMISII_MON_ZAHODIV, 0)), key="num_OR_KOMISII_MON_ZAHODIV")
+                min_value=0, step=1)
 
         st.markdown("---")
 
@@ -746,24 +973,21 @@ def render_np_or_form():
         with col1:
             st.subheader("📚 3. Діяльність у науково-методичних радах")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_DIYALNIST_RADY_VIKNU_ZASIDAN] = st.number_input(
+            st.session_state.np_form_data[c.NP_COL_OR_DIYALNIST_RADY_VIKNU_ZASIDAN] = ui_int_form(
+                c.NP_COL_OR_DIYALNIST_RADY_VIKNU_ZASIDAN,
                 "Кількість засідань (не більше 30 балів)",
-                min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_DIYALNIST_RADY_VIKNU_ZASIDAN, 0)),
-                key="num_OR_DIYALNIST_RADY_VIKNU_ZASIDAN")
+                min_value=0, step=1)
         with col2:
             st.subheader("🏛️ 4. Робота у складі вченої ради")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_VCHENA_RADA_CHLEN_ZASIDAN] = st.number_input(
+            st.session_state.np_form_data[c.NP_COL_OR_VCHENA_RADA_CHLEN_ZASIDAN] = ui_int_form(
+                c.NP_COL_OR_VCHENA_RADA_CHLEN_ZASIDAN,
                 "К-сть засідань (член ради)",
-                min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_VCHENA_RADA_CHLEN_ZASIDAN, 0)),
-                    key="num_OR_VCHENA_RADA_CHLEN_ZASIDAN")
-            st.session_state.np_form_data[c.NP_COL_OR_VCHENA_RADA_SEKRETAR_ZASIDAN] = st.number_input(
+                min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_OR_VCHENA_RADA_SEKRETAR_ZASIDAN] = ui_int_form(
+                c.NP_COL_OR_VCHENA_RADA_SEKRETAR_ZASIDAN,
                 "К-сть засідань (секретар)",
-                min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_VCHENA_RADA_SEKRETAR_ZASIDAN, 0)),
-                    key="num_OR_VCHENA_RADA_SEKRETAR_ZASIDAN")
+                min_value=0, step=1)
 
         st.markdown("---")
 
@@ -772,11 +996,10 @@ def render_np_or_form():
         with col1:
             st.subheader("📋 5. Робота в експертних, конкурсних комісіях")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_EKSPERT_KOMISII_ZASIDAN] = st.number_input(
+            st.session_state.np_form_data[c.NP_COL_OR_EKSPERT_KOMISII_ZASIDAN] = ui_int_form(
+                c.NP_COL_OR_EKSPERT_KOMISII_ZASIDAN,
                 "Кількість засідань (не більше 30 балів)",
-                min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_EKSPERT_KOMISII_ZASIDAN, 0)),
-                key="num_OR_EKSPERT_KOMISII_ZASIDAN")
+                min_value=0, step=1)
 
         with col2:
             st.subheader("🌐 6. Організація та проведення конференцій")
@@ -900,21 +1123,17 @@ def render_np_or_form():
         with col1:
             st.subheader("📰 9. Робота з формування наукових видань")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_FORMUVANNYA_VISNYK_KILKIST] = st.number_input(
-                "Вісник КНУ (к-сть видань)", min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_FORMUVANNYA_VISNYK_KILKIST, 0)),
-                    key="num_OR_FORMUVANNYA_VISNYK_KILKIST")
-            st.session_state.np_form_data[c.NP_COL_OR_FORMUVANNYA_ZBIRNYK_VIKNU_KILKIST] = st.number_input(
-                "Збірник праць ВІ (к-сть видань)", min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_FORMUVANNYA_ZBIRNYK_VIKNU_KILKIST, 0)),
-                    key="num_OR_FORMUVANNYA_ZBIRNYK_VIKNU_KILKIST")
+            st.session_state.np_form_data[c.NP_COL_OR_FORMUVANNYA_VISNYK_KILKIST] = ui_int_form(
+                c.NP_COL_OR_FORMUVANNYA_VISNYK_KILKIST,
+                "Вісник КНУ (к-сть видань)", min_value=0, step=1)
+            st.session_state.np_form_data[c.NP_COL_OR_FORMUVANNYA_ZBIRNYK_VIKNU_KILKIST] = ui_int_form(
+                c.NP_COL_OR_FORMUVANNYA_ZBIRNYK_VIKNU_KILKIST,
+                "Збірник праць ВІ (к-сть видань)", min_value=0, step=1)
         with col2:
             st.subheader("📝 11. Виконання оперативних завдань (поза НДР)")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_OZ_INSHI_ARK_NPP] = st.number_input(
-                "Кількість авторських аркушів", min_value=0.0, step=0.1, format="%.1f", value=float(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_OZ_INSHI_ARK_NPP, 0.0)),
-                    key="num_OR_OZ_INSHI_ARK_NPP")
+            st.session_state.np_form_data[c.NP_COL_OR_OZ_INSHI_ARK_NPP] = ui_float_form(c.NP_COL_OR_OZ_INSHI_ARK_NPP,
+                "Кількість авторських аркушів", min_value=0.0, step=0.1)
 
         st.markdown("---")
 
@@ -923,17 +1142,14 @@ def render_np_or_form():
         with col1:
             st.subheader("🗣️ 12. Лінгвістичне забезпечення (усний переклад)")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_LINGVO_USNYJ_DNIV] = st.number_input(
-                "Кількість робочих днів", min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_LINGVO_USNYJ_DNIV, 0)),
-                    key="num_OR_LINGVO_USNYJ_DNIV")
+            st.session_state.np_form_data[c.NP_COL_OR_LINGVO_USNYJ_DNIV] = ui_int_form(c.NP_COL_OR_LINGVO_USNYJ_DNIV,
+                "Кількість робочих днів", min_value=0, step=1)
         with col2:
             st.subheader("✍️ 13. Лінгвістичне забезпечення (письмовий переклад)")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_LINGVO_PYSPOVYJ_STORINOK] = st.number_input(
-                "Кількість перекладацьких сторінок (порції по 4)", min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_LINGVO_PYSPOVYJ_STORINOK, 0)),
-                    key="num_OR_LINGVO_PYSPOVYJ_STORINOK")
+            st.session_state.np_form_data[c.NP_COL_OR_LINGVO_PYSPOVYJ_STORINOK] = ui_int_form(
+                c.NP_COL_OR_LINGVO_PYSPOVYJ_STORINOK,
+                "Кількість перекладацьких сторінок (порції по 4)", min_value=0, step=1)
 
         st.markdown("---")
 
@@ -941,10 +1157,8 @@ def render_np_or_form():
         with st.container(border=True):
             st.subheader("📈 14. Проходження курсів підвищення кваліфікації")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_PIDV_KVAL_KILKIST] = st.number_input(
-                "Кількість отриманих сертифікатів", min_value=0, step=1, value=int(
-                    st.session_state.np_form_data.get(c.NP_COL_OR_PIDV_KVAL_KILKIST, 0)),
-                    key="num_OR_PIDV_KVAL_KILKIST")
+            st.session_state.np_form_data[c.NP_COL_OR_PIDV_KVAL_KILKIST] = ui_int_form(c.NP_COL_OR_PIDV_KVAL_KILKIST,
+                "Кількість отриманих сертифікатів", min_value=0, step=1)
 
 
 # --- Головна функція для відображення форми ---

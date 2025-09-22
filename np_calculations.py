@@ -189,36 +189,85 @@ def calculate_np_ntr_scores(row: pd.Series) -> float:
 
     # 12, 13. Монографії
     # 12. Одноосібна монографія
-    mono_solo = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON), [])
+    # mono_solo = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON), [])
+    # for mono in mono_solo:
+    #     sheets = float(mono.get("sheets", 0))
+    #     if mono.get("type") == "в іноземному видавництві":
+    #         total += sheets * c.NP_POINTS_NTR_MONO_ODNOOSIBNA_INOZEMNE_PER_SHEET
+    #     elif mono.get("type") == "в українському видавництві":
+    #         total += sheets * c.NP_POINTS_NTR_MONO_ODNOOSIBNA_UKRAINSKE_PER_SHEET
+
+    # 12. Одноосібна монографія
+    mono_solo = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON, '[]'), [])
+    if isinstance(mono_solo, dict):
+        mono_solo = [mono_solo]
+    if not isinstance(mono_solo, list):
+        mono_solo = []
+
     for mono in mono_solo:
-        sheets = float(mono.get("sheets", 0))
-        if mono.get("type") == "в іноземному видавництві":
+        sheets = float((mono or {}).get("sheets", 0) or 0)
+        t = (mono or {}).get("type", "")
+        if t == "в іноземному видавництві":
             total += sheets * c.NP_POINTS_NTR_MONO_ODNOOSIBNA_INOZEMNE_PER_SHEET
-        elif mono.get("type") == "в українському видавництві":
+        elif t == "в українському видавництві":
             total += sheets * c.NP_POINTS_NTR_MONO_ODNOOSIBNA_UKRAINSKE_PER_SHEET
 
     # 13. Колективна монографія
-    mono_team = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON), [])
+    # mono_team = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON), [])
+    # for mono in mono_team:
+    #     sheets = float(mono.get("sheets", 0))
+    #     authors = max(1, int(mono.get("authors", 1)))
+    #     if mono.get("type") == "в іноземному видавництві":
+    #         total += (sheets * c.NP_POINTS_NTR_MONO_KOLEKTYVNA_INOZEMNE_PER_SHEET) / authors
+    #     elif mono.get("type") == "в українському видавництві":
+    #         total += (sheets * c.NP_POINTS_NTR_MONO_KOLEKTYVNA_UKRAINSKE_PER_SHEET) / authors
+
+    # 13. Колективна монографія
+    mono_team = parse_json_details(safe_get(row, c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON, '[]'), [])
+    if isinstance(mono_team, dict):
+        mono_team = [mono_team]
+    if not isinstance(mono_team, list):
+        mono_team = []
+
     for mono in mono_team:
-        sheets = float(mono.get("sheets", 0))
-        authors = max(1, int(mono.get("authors", 1)))
-        if mono.get("type") == "в іноземному видавництві":
+        sheets = float((mono or {}).get("sheets", 0) or 0)
+        authors = max(1, int((mono or {}).get("authors", 1) or 1))
+        t = (mono or {}).get("type", "")
+        if t == "в іноземному видавництві":
             total += (sheets * c.NP_POINTS_NTR_MONO_KOLEKTYVNA_INOZEMNE_PER_SHEET) / authors
-        elif mono.get("type") == "в українському видавництві":
+        elif t == "в українському видавництві":
             total += (sheets * c.NP_POINTS_NTR_MONO_KOLEKTYVNA_UKRAINSKE_PER_SHEET) / authors
 
     # 14. Рецензування монографій
     total += int(safe_get(row, c.NP_COL_NTR_RECENZ_MONO_KILKIST, 0)) * c.NP_POINTS_NTR_RECENZ_MONO
 
     # 15. Рецензування статей
-    reviews = parse_json_details(safe_get(row, c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON),[])
+    # reviews = parse_json_details(safe_get(row, c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON),[])
+    # review_points_map = {
+    #     "Scopus, WoS, фахове видання категорії А": c.NP_POINTS_NTR_RECENZ_STATTI_SCOPUS_A,
+    #     "фахове видання України категорії Б": c.NP_POINTS_NTR_RECENZ_STATTI_FAHOVE_B,
+    #     "закордонне видання, індексоване в інших базах": c.NP_POINTS_NTR_RECENZ_STATTI_ZAKORDONNE_INSHI
+    # }
+    # for review in reviews:
+    #     total += int(review.get("count", 0)) * review_points_map.get(review.get("type"), 0)
+
+    # 15. Рецензування статей
+    reviews = parse_json_details(safe_get(row, c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON, '[]'), [])
+    if isinstance(reviews, dict):
+        reviews = [reviews]
+    if not isinstance(reviews, list):
+        reviews = []
+
     review_points_map = {
         "Scopus, WoS, фахове видання категорії А": c.NP_POINTS_NTR_RECENZ_STATTI_SCOPUS_A,
         "фахове видання України категорії Б": c.NP_POINTS_NTR_RECENZ_STATTI_FAHOVE_B,
-        "закордонне видання, індексоване в інших базах": c.NP_POINTS_NTR_RECENZ_STATTI_ZAKORDONNE_INSHI
+        "закордонне видання, індексоване в інших базах": c.NP_POINTS_NTR_RECENZ_STATTI_ZAKORDONNE_INSHI,
     }
-    for review in reviews:
-        total += int(review.get("count", 0)) * review_points_map.get(review.get("type"), 0)
+    for rev in reviews:
+        t = (rev or {}).get("type", "")
+        cnt = int((rev or {}).get("count", 0) or 0)
+        total += cnt * review_points_map.get(t, 0)
+
 
     # 16. Керівництво НДР курсантів
     total += int(
@@ -288,43 +337,107 @@ def calculate_np_or_scores(row: pd.Series) -> float:
     total += min(ekspert_points, c.NP_MAX_POINTS_OR_EKSPERT_KOMISII_PER_YEAR)
 
     # 6. Організація конференцій (з лімітом на кількість заходів)
-    conferences = parse_json_details(safe_get(row, c.NP_COL_OR_KONFERENTSII_DETAILS_JSON), [])
+    # conferences = parse_json_details(safe_get(row, c.NP_COL_OR_KONFERENTSII_DETAILS_JSON), [])
+    # conf_points_map = {
+    #     "голова оргкомітету": c.NP_POINTS_OR_KONFERENTSII_GOLOVA_ORGKOM,
+    #     "голова секції": c.NP_POINTS_OR_KONFERENTSII_GOLOVA_SEKCII,
+    #     "член оргкомітету, секретар секції": c.NP_POINTS_OR_KONFERENTSII_CHLEN_ORGKOM
+    # }
+    # total_conf_events = sum(int(conf.get("count", 0)) for conf in conferences)
+    # if total_conf_events > c.NP_MAX_EVENTS_OR_KONFERENTSII_PER_YEAR:
+    #     # Пропорційно зменшуємо бали, якщо перевищено ліміт заходів
+    #     for conf in conferences:
+    #         points = int(conf.get("count", 0)) * conf_points_map.get(conf.get("role"), 0)
+    #         total += points * (c.NP_MAX_EVENTS_OR_KONFERENTSII_PER_YEAR / total_conf_events)
+    # else:
+    #     for conf in conferences:
+    #         total += int(conf.get("count", 0)) * conf_points_map.get(conf.get("role"), 0)
+
+
+    # 6. Організація конференцій (з лімітом на кількість заходів)
+    conferences = parse_json_details(safe_get(row, c.NP_COL_OR_KONFERENTSII_DETAILS_JSON, '[]'), [])
+    if isinstance(conferences, dict):
+        conferences = [conferences]
+    if not isinstance(conferences, list):
+        conferences = []
+
     conf_points_map = {
         "голова оргкомітету": c.NP_POINTS_OR_KONFERENTSII_GOLOVA_ORGKOM,
         "голова секції": c.NP_POINTS_OR_KONFERENTSII_GOLOVA_SEKCII,
-        "член оргкомітету, секретар секції": c.NP_POINTS_OR_KONFERENTSII_CHLEN_ORGKOM
+        "член оргкомітету, секретар секції": c.NP_POINTS_OR_KONFERENTSII_CHLEN_ORGKOM,
     }
-    total_conf_events = sum(int(conf.get("count", 0)) for conf in conferences)
-    if total_conf_events > c.NP_MAX_EVENTS_OR_KONFERENTSII_PER_YEAR:
-        # Пропорційно зменшуємо бали, якщо перевищено ліміт заходів
+
+    total_conf_events = sum(int((conf or {}).get("count", 0) or 0) for conf in conferences)
+    if total_conf_events > c.NP_MAX_EVENTS_OR_KONFERENTSII_PER_YEAR and total_conf_events > 0:
+        ratio = c.NP_MAX_EVENTS_OR_KONFERENTSII_PER_YEAR / total_conf_events
         for conf in conferences:
-            points = int(conf.get("count", 0)) * conf_points_map.get(conf.get("role"), 0)
-            total += points * (c.NP_MAX_EVENTS_OR_KONFERENTSII_PER_YEAR / total_conf_events)
+            cnt = int((conf or {}).get("count", 0) or 0)
+            role = (conf or {}).get("role", "")
+            points = cnt * conf_points_map.get(role, 0)
+            total += points * ratio
     else:
         for conf in conferences:
-            total += int(conf.get("count", 0)) * conf_points_map.get(conf.get("role"), 0)
+            cnt = int((conf or {}).get("count", 0) or 0)
+            role = (conf or {}).get("role", "")
+            total += cnt * conf_points_map.get(role, 0)
 
     # 7. Організація олімпіад (з лімітом на бали)
-    olympiads = parse_json_details(safe_get(row, c.NP_COL_OR_OLIMPIADY_DETAILS_JSON), [])
+    # olympiads = parse_json_details(safe_get(row, c.NP_COL_OR_OLIMPIADY_DETAILS_JSON), [])
+    # olymp_points_map = {
+    #     "всеукраїнських та міжнародних": c.NP_POINTS_OR_OLIMPIADY_VSEUKR_MIZHNAR,
+    #     "Військового інституту (факультету)": c.NP_POINTS_OR_OLIMPIADY_VIKNU,
+    #     "експерти з оцінювання робіт": c.NP_POINTS_OR_OLIMPIADY_EKSPERT_PER_WORK
+    # }
+    # olymp_points = 0
+    # for olymp in olympiads:
+    #     olymp_points += int(olymp.get("count", 0)) * olymp_points_map.get(olymp.get("role"), 0)
+    # total += min(olymp_points, c.NP_MAX_POINTS_OR_OLIMPIADY_PER_YEAR)
+
+    # 7. Організація олімпіад (з лімітом на бали)
+    olympiads = parse_json_details(safe_get(row, c.NP_COL_OR_OLIMPIADY_DETAILS_JSON, '[]'), [])
+    if isinstance(olympiads, dict):
+        olympiads = [olympiads]
+    if not isinstance(olympiads, list):
+        olympiads = []
+
     olymp_points_map = {
         "всеукраїнських та міжнародних": c.NP_POINTS_OR_OLIMPIADY_VSEUKR_MIZHNAR,
         "Військового інституту (факультету)": c.NP_POINTS_OR_OLIMPIADY_VIKNU,
-        "експерти з оцінювання робіт": c.NP_POINTS_OR_OLIMPIADY_EKSPERT_PER_WORK
+        "експерти з оцінювання робіт": c.NP_POINTS_OR_OLIMPIADY_EKSPERT_PER_WORK,
     }
     olymp_points = 0
     for olymp in olympiads:
-        olymp_points += int(olymp.get("count", 0)) * olymp_points_map.get(olymp.get("role"), 0)
+        role = (olymp or {}).get("role", "")
+        cnt = int((olymp or {}).get("count", 0) or 0)
+        olymp_points += cnt * olymp_points_map.get(role, 0)
     total += min(olymp_points, c.NP_MAX_POINTS_OR_OLIMPIADY_PER_YEAR)
 
     # 8. Робота у редколегіях
-    editorials = parse_json_details(safe_get(row, c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON), [])
+    # editorials = parse_json_details(safe_get(row, c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON), [])
+    # editorial_points_map = {
+    #     "виданнях, що індексуються в Scopus та WoS": c.NP_POINTS_OR_REDKOLEGIYI_SCOPUS_WOS,
+    #     "в закордонних виданнях, індексованих наукометричними базами": c.NP_POINTS_OR_REDKOLEGIYI_ZAKORDONNI_INDEX,
+    #     "українських фахових виданнях": c.NP_POINTS_OR_REDKOLEGIYI_UKR_FAHOVI
+    # }
+    # for editorial in editorials:
+    #     total += int(editorial.get("count", 0)) * editorial_points_map.get(editorial.get("role"), 0)
+
+    # 8. Робота у редколегіях
+    editorials = parse_json_details(safe_get(row, c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON, '[]'), [])
+    if isinstance(editorials, dict):
+        editorials = [editorials]
+    if not isinstance(editorials, list):
+        editorials = []
+
     editorial_points_map = {
         "виданнях, що індексуються в Scopus та WoS": c.NP_POINTS_OR_REDKOLEGIYI_SCOPUS_WOS,
         "в закордонних виданнях, індексованих наукометричними базами": c.NP_POINTS_OR_REDKOLEGIYI_ZAKORDONNI_INDEX,
-        "українських фахових виданнях": c.NP_POINTS_OR_REDKOLEGIYI_UKR_FAHOVI
+        "українських фахових виданнях": c.NP_POINTS_OR_REDKOLEGIYI_UKR_FAHOVI,
     }
-    for editorial in editorials:
-        total += int(editorial.get("count", 0)) * editorial_points_map.get(editorial.get("role"), 0)
+    for ed in editorials:
+        role = (ed or {}).get("role", "")
+        cnt = int((ed or {}).get("count", 0) or 0)
+        total += cnt * editorial_points_map.get(role, 0)
 
     # 9. Формування видань
     total += int(safe_get(row, c.NP_COL_OR_FORMUVANNYA_VISNYK_KILKIST, 0)) * c.NP_POINTS_OR_FORMUVANNYA_VISNYK

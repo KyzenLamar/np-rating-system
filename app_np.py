@@ -10,12 +10,14 @@ from uaf_styles import load_css
 from pathlib import Path
 import base64
 from datetime import datetime
+import datetime as dt
 from oauth_google import ensure_login, logout_button, _google_userinfo_via_button
 
 
 # --- КОНФІГУРАЦІЯ АДМІНІСТРАТОРІВ ---
 # Впишіть сюди ПІБ тих, хто буде мати права адміністратора
-ADMIN_USERS = ["Пампуха Ігор Володимирович", "Логунов Ігор Юрійович"]
+ADMIN_USERS = ["Пампуха Ігор Володимирович", "Логунов Ігор Юрійович", "Білан Максим Борисович",
+               "Карпенко Андрій Олексійович"]
 
 
 # --- Налаштування сторінки ---
@@ -33,6 +35,18 @@ def favicon_data_uri(path: str = "favicon.ico") -> str:
         b64 = base64.b64encode(f.read()).decode("ascii")
     # MIME для .ico
     return f"data:image/x-icon;base64,{b64}"
+
+# def select_period_ui():
+#     years = list(range(2020, dt.datetime.now().year + 1))
+#     years = [str(y) for y in years]  # працюємо рядками, як у колонках
+#     cur = st.session_state.get("selected_period") or str(dt.datetime.now().year)
+#     selected = st.selectbox("Оберіть рік (період) для внесення даних", options=years, index=years.index(cur) if cur in years else len(years)-1)
+#     st.session_state.selected_period = selected
+#     # щоб форми знали про період:
+#     st.session_state.np_form_data[c.NP_COL_PERIOD] = selected
+#
+# # виклич перед формами:
+# select_period_ui()
 
 def ui_bool(label: str, df: pd.DataFrame, row_idx, col_key: str, pib: str, period: str):
     """
@@ -1205,6 +1219,54 @@ def render_np_input_form_main():
         dm.save_np_ratings(st.session_state.np_ratings)
         st.success(f"Дані для {pib} успішно збережено!")
         st.rerun()
+
+
+    # --- ЗБЕРЕЖЕННЯ ДАНИХ ЗА ОБРАНИЙ РІК ---
+    # if st.button("💾 Зберегти дані за обраний рік"):
+    #     # 1) Серіалізувати всі JSON-списки у форму
+    #     st.session_state.np_form_data[c.NP_COL_NTR_STATTI_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_ntr_articles_list, ensure_ascii=False)
+    #     st.session_state.np_form_data[c.NP_COL_NTR_DOPOVIDI_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_ntr_reports_list, ensure_ascii=False)
+    #     st.session_state.np_form_data[c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_ntr_mono_solo_list, ensure_ascii=False)
+    #     st.session_state.np_form_data[c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_ntr_mono_team_list, ensure_ascii=False)
+    #     st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_ntr_review_articles_list, ensure_ascii=False)
+    #
+    #     st.session_state.np_form_data[c.NP_COL_OR_KONFERENTSII_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_or_conferences_list, ensure_ascii=False)
+    #     st.session_state.np_form_data[c.NP_COL_OR_OLIMPIADY_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_or_olympiads_list, ensure_ascii=False)
+    #     st.session_state.np_form_data[c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON] = json.dumps(
+    #         st.session_state.np_or_editorial_list, ensure_ascii=False)
+    #
+    #     # 2) Зібрати form_row і гарантувати ПІБ + Період
+    #     form_row = dict(st.session_state.np_form_data)
+    #     form_row[c.COL_PIB] = form_row.get(c.COL_PIB) or st.session_state.get("selected_pib", "")
+    #     form_row[c.NP_COL_PERIOD] = form_row.get(c.NP_COL_PERIOD) or st.session_state.get("selected_period", "")
+    #
+    #     if not form_row[c.COL_PIB] or not form_row[c.NP_COL_PERIOD]:
+    #         st.error("Спочатку оберіть ПІБ і рік (період).")
+    #     else:
+    #         # 3) Порахувати підсумкові бали для цього рядка
+    #         #    (робимо тимчасову Series по всіх колонках, щоб калькулятор мав усе необхідне)
+    #         tmp = pd.Series(form_row)
+    #         tmp = tmp.reindex(st.session_state.np_ratings.columns, fill_value=0)
+    #         updated = calc.calculate_all_scores_for_np(tmp)
+    #
+    #         for col in [c.NP_COL_PP_TOTAL, c.NP_COL_NTR_TOTAL, c.NP_COL_OR_TOTAL, c.NP_COL_IB_TOTAL]:
+    #             form_row[col] = updated.get(col, 0)
+    #
+    #         # 4) Upsert по (ПІБ, Період)
+    #         st.session_state.np_ratings = dm.upsert_np_row(st.session_state.np_ratings, form_row)
+    #
+    #         # 5) Зберегти файл
+    #         dm.save_np_ratings(st.session_state.np_ratings)
+    #
+    #         st.success(f"Збережено: {form_row[c.COL_PIB]} — {form_row[c.NP_COL_PERIOD]}")
+    #         st.rerun()
 
 
 # --- Навігація та логіка розділів ---

@@ -36,17 +36,6 @@ def favicon_data_uri(path: str = "favicon.ico") -> str:
     # MIME для .ico
     return f"data:image/x-icon;base64,{b64}"
 
-# def select_period_ui():
-#     years = list(range(2020, dt.datetime.now().year + 1))
-#     years = [str(y) for y in years]  # працюємо рядками, як у колонках
-#     cur = st.session_state.get("selected_period") or str(dt.datetime.now().year)
-#     selected = st.selectbox("Оберіть рік (період) для внесення даних", options=years, index=years.index(cur) if cur in years else len(years)-1)
-#     st.session_state.selected_period = selected
-#     # щоб форми знали про період:
-#     st.session_state.np_form_data[c.NP_COL_PERIOD] = selected
-#
-# # виклич перед формами:
-# select_period_ui()
 
 def ui_bool(label: str, df: pd.DataFrame, row_idx, col_key: str, pib: str, period: str):
     """
@@ -175,6 +164,40 @@ def ui_text_form(col_key: str, label: str, placeholder: str = "", max_chars: int
     fd[col_key] = out.strip()
     return fd[col_key]
 
+def humanize_bools(df: pd.DataFrame) -> pd.DataFrame:
+    """Замінює boolean-ish значення на 'Так'/'Ні' лише в тих стовпцях, де це справді булі."""
+    df_copy = df.copy()
+
+    def is_booleanish(series: pd.Series) -> bool:
+        # приводимо все до нижнього регістру рядком і перевіряємо унікальні значення
+        vals = series.dropna().astype(str).str.strip().str.lower().unique()
+        # порожній стовпець не чіпаємо
+        if len(vals) == 0:
+            return False
+        # булевий тип одразу ОК
+        if series.dtype == bool:
+            return True
+        # тільки якщо всі значення з набору true/false/1/0
+        return set(vals).issubset({"true", "false", "1", "0"})
+
+    def map_boolish(x):
+        if isinstance(x, bool):
+            return "Так" if x else "Ні"
+        if x is None or (isinstance(x, float) and pd.isna(x)):
+            return x
+        s = str(x).strip().lower()
+        if s in ("true", "1"):
+            return "Так"
+        if s in ("false", "0"):
+            return "Ні"
+        return x
+
+    for col in df_copy.columns:
+        if is_booleanish(df_copy[col]):
+            df_copy[col] = df_copy[col].map(map_boolish)
+
+    return df_copy
+
 # --- CSS СТИЛІЗАЦІЯ ЗА БРЕНДБУКОМ ЗСУ ---
 
 load_css()
@@ -240,29 +263,6 @@ def get_current_np_data_row(pib):
 
 
 # --- Функція візуалізації ---
-# def display_scores_summary(pib):
-#     """Відображає діаграму з поточними балами для обраного НП."""
-#     if pib and not st.session_state.np_ratings.empty and pib in st.session_state.np_ratings[c.COL_PIB].values:
-#         scores = st.session_state.np_ratings[st.session_state.np_ratings[c.COL_PIB] == pib].iloc[0]
-#
-#         chart_data = {
-#             "Постійні показники (ПП)": scores.get(c.NP_COL_PP_TOTAL, 0),
-#             "Наукова діяльність (НТР)": scores.get(c.NP_COL_NTR_TOTAL, 0),
-#             "Організаційна діяльність (ОР)": scores.get(c.NP_COL_OR_TOTAL, 0),
-#         }
-#
-#         total_score = scores.get(c.NP_COL_IB_TOTAL, 0)
-#
-#         st.subheader(f"Поточний рейтинг: {total_score:.2f} балів")
-#
-#         # Створюємо DataFrame для діаграми
-#         df_chart = pd.DataFrame.from_dict(chart_data, orient='index', columns=['Бали'])
-#         df_chart.index.name = "Категорія"
-#
-#         st.bar_chart(df_chart)
-
-
-# --- Функція візуалізації ---
 def display_scores_summary(pib):
     """Відображає діаграму з поточними балами та порівнянням для обраного НП."""
     if pib and not st.session_state.np_ratings.empty and pib in st.session_state.np_ratings[c.COL_PIB].values:
@@ -316,19 +316,6 @@ def render_np_pp_form():
         # --- Пара 1 & 2 ---
         col1, col2 = st.columns(2, border=True)
 
-        # with col1:
-        #     st.subheader("🎓 1. Науковий ступінь")
-        #     st.markdown("---")
-        #     st.session_state.np_form_data[c.NP_COL_PP_KVAL_KANDYDAT] = st.checkbox(
-        #         "Диплом кандидата наук (доктора філософії)",
-        #         value=st.session_state.np_form_data.get(c.NP_COL_PP_KVAL_KANDYDAT, False))
-        #     st.session_state.np_form_data[c.NP_COL_PP_KVAL_PHD_ABROAD] = st.checkbox("Закордонний диплом PhD",
-        #                                                                              value=st.session_state.np_form_data.get(
-        #                                                                                  c.NP_COL_PP_KVAL_PHD_ABROAD,
-        #                                                                                  False))
-        #     st.session_state.np_form_data[c.NP_COL_PP_KVAL_DOCTOR] = st.checkbox("Диплом доктора наук",
-        #                                                                          value=st.session_state.np_form_data.get(
-        #                                                                              c.NP_COL_PP_KVAL_DOCTOR, False))
         with col1:
             st.subheader("🎓 1. Науковий ступінь")
             st.markdown("---")
@@ -348,21 +335,6 @@ def render_np_pp_form():
                 "Диплом доктора наук"
             )
 
-
-        # with col2:
-        #     st.subheader("👨🏽‍🎓 2. Вчене звання")
-        #     st.markdown("---")
-        #     st.session_state.np_form_data[c.NP_COL_PP_VZVAN_STARSH_DOSL] = st.checkbox("Старший дослідник (СНС)",
-        #                                                                                value=st.session_state.np_form_data.get(
-        #                                                                                    c.NP_COL_PP_VZVAN_STARSH_DOSL,
-        #                                                                                    False))
-        #     st.session_state.np_form_data[c.NP_COL_PP_VZVAN_DOTSENT] = st.checkbox("Доцент",
-        #                                                                            value=st.session_state.np_form_data.get(
-        #                                                                                c.NP_COL_PP_VZVAN_DOTSENT, False))
-        #     st.session_state.np_form_data[c.NP_COL_PP_VZVAN_PROFESOR] = st.checkbox("Професор",
-        #                                                                             value=st.session_state.np_form_data.get(
-        #                                                                                 c.NP_COL_PP_VZVAN_PROFESOR, False))
-        # st.markdown("---")
 
         with col2:
             st.subheader("👨🏽‍🎓 2. Вчене звання")
@@ -384,14 +356,8 @@ def render_np_pp_form():
         # --- Пара 3 & 4 ---
 
         col1, col2 = st.columns(2, border=True)
-        # with col1:
-        #     st.subheader("🏅 3. Державна премія")
-        #     st.markdown("---")
-        #     st.session_state.np_form_data[c.NP_COL_PP_DERZH_PREMIYA] = st.checkbox("Лауреат Державної премії",
-        #                                                                            value=st.session_state.np_form_data.get(
-        #                                                                                c.NP_COL_PP_DERZH_PREMIYA, False))
-
         with col1:
+
             st.subheader("🏅 3. Державна премія")
             st.markdown("---")
             st.session_state.np_form_data[c.NP_COL_PP_DERZH_PREMIYA] = ui_bool_form(
@@ -400,11 +366,6 @@ def render_np_pp_form():
                 )
 
         with col2:
-            # st.subheader("🎖️ 4. Почесне звання")
-            # st.markdown("---")
-            # st.session_state.np_form_data[c.NP_COL_PP_POCHESNE_ZVANNYA] = st.checkbox(
-            #     "Наявність почесного звання (Заслужений діяч, винахідник, юрист тощо)",
-            #     value=st.session_state.np_form_data.get(c.NP_COL_PP_POCHESNE_ZVANNYA, False))
 
             st.subheader("🎖️ 4. Почесне звання")
             st.markdown("---")
@@ -418,21 +379,6 @@ def render_np_pp_form():
 
         col1, col2 = st.columns(2, border=True)
         with col1:
-            # st.subheader("🏆 5. Нагороди")
-            # st.markdown("---")
-            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VRU_KMU] = st.checkbox("Грамота ВРУ / КМУ",
-            #                                                                           value=st.session_state.np_form_data.get(
-            #                                                                               c.NP_COL_PP_NAGORODY_VRU_KMU,
-            #                                                                               False))
-            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_ORDER] = st.checkbox("Орден (державна нагорода)",
-            #                                                                         value=st.session_state.np_form_data.get(
-            #                                                                             c.NP_COL_PP_NAGORODY_ORDER, False))
-            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIDOVI] = st.checkbox(
-            #     "Заохочення від командувачів видів, родів військ (сил)",
-            #     value=st.session_state.np_form_data.get(c.NP_COL_PP_NAGORODY_VIDOVI, False))
-            # st.session_state.np_form_data[c.NP_COL_PP_NAGORODY_VIKNU] = st.checkbox(
-            #     "Заохочення від начальника Військового інституту",
-            #     value=st.session_state.np_form_data.get(c.NP_COL_PP_NAGORODY_VIKNU, False))
 
             st.subheader("🏆 5. Нагороди")
             st.markdown("---")
@@ -446,21 +392,7 @@ def render_np_pp_form():
                 c.NP_COL_PP_NAGORODY_VIKNU, "Заохочення від начальника Військового інституту")
 
         with col2:
-            # st.subheader("🏛️ 6. Членство в академіях наук")
-            # st.markdown("---")
-            # st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN] = st.checkbox("Дійсний член НАНУ",
-            #                                                                    value=st.session_state.np_form_data.get(
-            #                                                                        c.NP_COL_PP_NAN_CHLEN, False))
-            # st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN_KOR] = st.checkbox("Член-кореспондент НАНУ",
-            #                                                                        value=st.session_state.np_form_data.get(
-            #                                                                            c.NP_COL_PP_NAN_CHLEN_KOR, False))
-            # st.session_state.np_form_data[c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI] = st.checkbox("Член галузевої академії наук",
-            #                                                                                 value=st.session_state.np_form_data.get(
-            #                                                                                     c.NP_COL_PP_NAN_HALUZEVI_AKADEMIYI,
-            #                                                                                     False))
-            # st.session_state.np_form_data[c.NP_COL_PP_NAN_HROMADSKI] = st.checkbox("Член наукової громадської організації",
-            #                                                                        value=st.session_state.np_form_data.get(
-            #                                                                            c.NP_COL_PP_NAN_HROMADSKI, False))
+
             st.subheader("🏛️ 6. Членство в академіях наук")
             st.markdown("---")
             st.session_state.np_form_data[c.NP_COL_PP_NAN_CHLEN] = ui_bool_form(
@@ -477,11 +409,6 @@ def render_np_pp_form():
 
         col1, col2 = st.columns(2, border=True)
         with col1:
-            # st.subheader("🛡️ 7. Статус УБД")
-            # st.markdown("---")
-            # st.session_state.np_form_data[c.NP_COL_PP_STATUS_UBD] = st.checkbox("Наявність статусу учасника бойових дій",
-            #                                                                     value=st.session_state.np_form_data.get(
-            #                                                                         c.NP_COL_PP_STATUS_UBD, False))
 
             st.subheader("🛡️ 7. Статус УБД")
             st.markdown("---")
@@ -489,14 +416,6 @@ def render_np_pp_form():
                 "Наявність статусу учасника бойових дій")
 
         with col2:
-            # st.subheader("🌐 8. Участь у міжнародних військових навчаннях НАТО")
-            # st.markdown("---")
-            # st.session_state.np_form_data[c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST] = st.number_input("Кількість навчань",
-            #                                                                                      min_value=0, step=1,
-            #                                                                                      value=int(
-            #                                                                                          st.session_state.np_form_data.get(
-            #                                                                                              c.NP_COL_PP_NAVCHANNYA_NATO_KILKIST,
-            #                                                                                              0)))
 
             st.subheader("🌐 8. Участь у міжнародних військових навчаннях НАТО")
             st.markdown("---")
@@ -512,11 +431,6 @@ def render_np_pp_form():
 
         col1, col2 = st.columns(2, border=True)
         with col1:
-            # st.subheader("👨‍💻 9. Член воєнно-наукової групи на ОКП бригади")
-            # st.markdown("---")
-            # st.session_state.np_form_data[c.NP_COL_PP_VNG_OKP_DNIV] = st.number_input("Кількість днів у складі ВНГ",
-            #                                                                           min_value=0, step=1, value=int(
-            #         st.session_state.np_form_data.get(c.NP_COL_PP_VNG_OKP_DNIV, 0)))
 
             st.subheader("👨‍💻 9. Член воєнно-наукової групи на ОКП бригади")
             st.markdown("---")
@@ -528,14 +442,6 @@ def render_np_pp_form():
 
 
         with col2:
-            # st.subheader("🗣️ 10. Рівень володіння іноземною мовою")
-            # st.markdown("---")
-            # lang_levels = list(c.NP_POINTS_PP_INOZEMNA_MOVA.keys())
-            # current_level = st.session_state.np_form_data.get(c.NP_COL_PP_INOZEMNA_MOVA_RIVEN, "Немає")
-            # st.session_state.np_form_data[c.NP_COL_PP_INOZEMNA_MOVA_RIVEN] = st.selectbox("Рівень СМП (CEFR)",
-            #                                                                               options=lang_levels,
-            #                                                                               index=lang_levels.index(
-            #                                                                                   current_level))
 
             st.subheader("🗣️ 10. Рівень володіння іноземною мовою")
             st.markdown("---")
@@ -1171,8 +1077,53 @@ def render_np_or_form():
         with st.container(border=True):
             st.subheader("📈 14. Проходження курсів підвищення кваліфікації")
             st.markdown("---")
-            st.session_state.np_form_data[c.NP_COL_OR_PIDV_KVAL_KILKIST] = ui_int_form(c.NP_COL_OR_PIDV_KVAL_KILKIST,
-                "Кількість отриманих сертифікатів", min_value=0, step=1)
+
+            # === НАЗВИ КУРСІВ ===
+            st.caption("Додайте назви курсів (не впливають на бали, зберігаються довідково).")
+
+            # ініціалізація списку у session_state
+            if "np_or_courses_list" not in st.session_state:
+                st.session_state.np_or_courses_list = []
+
+                # Поля вводу (назва + кількість) в один рядок
+            col_course, col_count = st.columns([3, 1])
+            with col_course:
+                new_course = st.text_input("Назва курсу", key="or_course_title")
+            with col_count:
+                new_count = ui_int_form(
+                    c.NP_COL_OR_PIDV_KVAL_KILKIST,
+                    "Кількість сертифікатів",
+                    min_value=0,
+                    step=1
+                )
+            st.session_state.np_form_data[c.NP_COL_OR_PIDV_KVAL_KILKIST] = new_count
+
+            cols_btn = st.columns([1, 1, 3])
+            if cols_btn[0].button("➕ Додати курс"):
+                if new_course.strip():
+                    st.session_state.np_or_courses_list.append({
+                        "title": new_course.strip(),
+                        "count": new_count
+                    })
+                    st.success("Курс додано.")
+                else:
+                    st.warning("Вкажіть назву курсу.")
+
+            if cols_btn[1].button("🗑️ Очистити курси"):
+                st.session_state.np_or_courses_list = []
+                st.info("Список очищено.")
+
+            # Показати існуючі курси
+            if st.session_state.np_or_courses_list:
+                for i, item in enumerate(st.session_state.np_or_courses_list):
+                    cc1, cc2, cc3 = st.columns([6, 2, 1])
+                    cc1.write(f"📘 {item.get('title', '')}")
+                    cc2.write(f"Кількість: {item.get('count', 0)}")
+                    if cc3.button("✖", key=f"del_or_course_{i}"):
+                        st.session_state.np_or_courses_list.pop(i)
+                        st.rerun()
+            else:
+                st.info("Курси ще не додані.")
 
 
 # --- Головна функція для відображення форми ---
@@ -1193,10 +1144,10 @@ def render_np_input_form_main():
     render_np_or_form()
 
     st.markdown("---")
-    if st.button("Зберегти дані НП", key="save_np_data"):
-        idx = st.session_state.np_ratings.index[st.session_state.np_ratings[c.COL_PIB] == pib].tolist()[0]
 
-        # Серіалізація JSON
+    # --- ЗБЕРЕЖЕННЯ ДАНИХ ЗА ОБРАНИЙ РІК ---
+    if st.button("💾 Зберегти дані за обраний рік"):
+        # 1) Серіалізувати всі JSON-списки у форму
         st.session_state.np_form_data[c.NP_COL_NTR_STATTI_DETAILS_JSON] = json.dumps(
             st.session_state.np_ntr_articles_list, ensure_ascii=False)
         st.session_state.np_form_data[c.NP_COL_NTR_DOPOVIDI_DETAILS_JSON] = json.dumps(
@@ -1207,66 +1158,39 @@ def render_np_input_form_main():
             st.session_state.np_ntr_mono_team_list, ensure_ascii=False)
         st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON] = json.dumps(
             st.session_state.np_ntr_review_articles_list, ensure_ascii=False)
+
         st.session_state.np_form_data[c.NP_COL_OR_KONFERENTSII_DETAILS_JSON] = json.dumps(
             st.session_state.np_or_conferences_list, ensure_ascii=False)
+        st.session_state.np_form_data[c.NP_COL_OR_OLIMPIADY_DETAILS_JSON] = json.dumps(
+            st.session_state.np_or_olympiads_list, ensure_ascii=False)
+        st.session_state.np_form_data[c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON] = json.dumps(
+            st.session_state.np_or_editorial_list, ensure_ascii=False)
 
-        for key, value in st.session_state.np_form_data.items():
-            if key in st.session_state.np_ratings.columns:
-                st.session_state.np_ratings.loc[idx, key] = value
-        updated_row = calc.calculate_all_scores_for_np(st.session_state.np_ratings.loc[idx])
-        for col in [c.NP_COL_PP_TOTAL, c.NP_COL_NTR_TOTAL, c.NP_COL_OR_TOTAL, c.NP_COL_IB_TOTAL]:
-            st.session_state.np_ratings.loc[idx, col] = updated_row[col]
-        dm.save_np_ratings(st.session_state.np_ratings)
-        st.success(f"Дані для {pib} успішно збережено!")
-        st.rerun()
+        # 2) Зібрати form_row і гарантувати ПІБ + Період
+        form_row = dict(st.session_state.np_form_data)
+        form_row[c.COL_PIB] = form_row.get(c.COL_PIB) or st.session_state.get("selected_pib", "")
+        form_row[c.NP_COL_PERIOD] = form_row.get(c.NP_COL_PERIOD) or st.session_state.get("selected_period", "")
 
+        if not form_row[c.COL_PIB] or not form_row[c.NP_COL_PERIOD]:
+            st.error("Спочатку оберіть ПІБ і рік (період).")
+        else:
+            # 3) Порахувати підсумкові бали для цього рядка
+            #    (робимо тимчасову Series по всіх колонках, щоб калькулятор мав усе необхідне)
+            tmp = pd.Series(form_row)
+            tmp = tmp.reindex(st.session_state.np_ratings.columns, fill_value=0)
+            updated = calc.calculate_all_scores_for_np(tmp)
 
-    # --- ЗБЕРЕЖЕННЯ ДАНИХ ЗА ОБРАНИЙ РІК ---
-    # if st.button("💾 Зберегти дані за обраний рік"):
-    #     # 1) Серіалізувати всі JSON-списки у форму
-    #     st.session_state.np_form_data[c.NP_COL_NTR_STATTI_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_ntr_articles_list, ensure_ascii=False)
-    #     st.session_state.np_form_data[c.NP_COL_NTR_DOPOVIDI_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_ntr_reports_list, ensure_ascii=False)
-    #     st.session_state.np_form_data[c.NP_COL_NTR_MONO_ODNOOSIBNA_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_ntr_mono_solo_list, ensure_ascii=False)
-    #     st.session_state.np_form_data[c.NP_COL_NTR_MONO_KOLEKTYVNA_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_ntr_mono_team_list, ensure_ascii=False)
-    #     st.session_state.np_form_data[c.NP_COL_NTR_RECENZ_STATTI_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_ntr_review_articles_list, ensure_ascii=False)
-    #
-    #     st.session_state.np_form_data[c.NP_COL_OR_KONFERENTSII_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_or_conferences_list, ensure_ascii=False)
-    #     st.session_state.np_form_data[c.NP_COL_OR_OLIMPIADY_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_or_olympiads_list, ensure_ascii=False)
-    #     st.session_state.np_form_data[c.NP_COL_OR_REDKOLEGIYI_DETAILS_JSON] = json.dumps(
-    #         st.session_state.np_or_editorial_list, ensure_ascii=False)
-    #
-    #     # 2) Зібрати form_row і гарантувати ПІБ + Період
-    #     form_row = dict(st.session_state.np_form_data)
-    #     form_row[c.COL_PIB] = form_row.get(c.COL_PIB) or st.session_state.get("selected_pib", "")
-    #     form_row[c.NP_COL_PERIOD] = form_row.get(c.NP_COL_PERIOD) or st.session_state.get("selected_period", "")
-    #
-    #     if not form_row[c.COL_PIB] or not form_row[c.NP_COL_PERIOD]:
-    #         st.error("Спочатку оберіть ПІБ і рік (період).")
-    #     else:
-    #         # 3) Порахувати підсумкові бали для цього рядка
-    #         #    (робимо тимчасову Series по всіх колонках, щоб калькулятор мав усе необхідне)
-    #         tmp = pd.Series(form_row)
-    #         tmp = tmp.reindex(st.session_state.np_ratings.columns, fill_value=0)
-    #         updated = calc.calculate_all_scores_for_np(tmp)
-    #
-    #         for col in [c.NP_COL_PP_TOTAL, c.NP_COL_NTR_TOTAL, c.NP_COL_OR_TOTAL, c.NP_COL_IB_TOTAL]:
-    #             form_row[col] = updated.get(col, 0)
-    #
-    #         # 4) Upsert по (ПІБ, Період)
-    #         st.session_state.np_ratings = dm.upsert_np_row(st.session_state.np_ratings, form_row)
-    #
-    #         # 5) Зберегти файл
-    #         dm.save_np_ratings(st.session_state.np_ratings)
-    #
-    #         st.success(f"Збережено: {form_row[c.COL_PIB]} — {form_row[c.NP_COL_PERIOD]}")
-    #         st.rerun()
+            for col in [c.NP_COL_PP_TOTAL, c.NP_COL_NTR_TOTAL, c.NP_COL_OR_TOTAL, c.NP_COL_IB_TOTAL]:
+                form_row[col] = updated.get(col, 0)
+
+            # 4) Upsert по (ПІБ, Період)
+            st.session_state.np_ratings = dm.upsert_np_row(st.session_state.np_ratings, form_row)
+
+            # 5) Зберегти файл
+            dm.save_np_ratings(st.session_state.np_ratings)
+
+            st.success(f"Збережено: {form_row[c.COL_PIB]} — {form_row[c.NP_COL_PERIOD]}")
+            st.rerun()
 
 
 # --- Навігація та логіка розділів ---
@@ -1352,6 +1276,15 @@ def main_app():
         else:
             selected_pib = st.session_state.logged_in_user
 
+        # 2) Рік/період — ЛИШЕ тут
+        period_options = [str(y) for y in range(2023, 2031)]
+        current_period = st.session_state.get("selected_period")
+        default_index = period_options.index(current_period) if current_period in period_options else len(
+            period_options) - 1
+        selected_period = st.selectbox("Оберіть рік (період) для внесення даних:", period_options,
+                                       index=default_index)
+        st.session_state.selected_period = selected_period
+
         if selected_pib != st.session_state.current_np_pib:
             get_current_np_data_row(selected_pib)
             st.rerun()
@@ -1359,28 +1292,74 @@ def main_app():
         if not st.session_state.np_form_data or st.session_state.np_form_data.get(c.COL_PIB) != selected_pib:
             get_current_np_data_row(selected_pib)
 
+        # 4) Гарантуємо, що у формі є ПІБ і Період
+        st.session_state.np_form_data[c.COL_PIB] = selected_pib
+        st.session_state.np_form_data[c.NP_COL_PERIOD] = selected_period
+
         render_np_input_form_main()
 
     elif choice == "📊 Загальний рейтинг НП" and st.session_state.is_admin:
         st.header("Загальний рейтинг Наукових Працівників")
-        # Фільтр для вибору НП
-        pib_list = sorted(st.session_state.np_structure[c.COL_PIB].tolist())
+
+        # ==== Фільтр періодів (років) для перегляду ====
+        # 1) Витягаємо роки як ЧИСЛА (коерсимо все зайве), потім робимо рядки
+
+        df = st.session_state.np_ratings.copy()
+
+        # Коерсимо до чисел і чистимо сміття
+        years_num = pd.to_numeric(df[c.NP_COL_PERIOD], errors="ignore")
+
+        # Якщо після ignore лишилися рядки — коерсимо ще раз
+        if years_num.dtype == "O":
+            years_num = pd.to_numeric(df[c.NP_COL_PERIOD].astype(str).str.replace(",", ".").str.strip(),
+                                      errors="coerce")
+
+        # Фільтр валідних років: без NaN/0, у розумному діапазоні
+        this_year = dt.datetime.now().year
+        years_num = years_num.dropna()
+        years_num = years_num.astype(float)
+
+        valid_years = years_num[(years_num >= 2000) & (years_num <= this_year + 1)].astype(int)
+        all_years = sorted(valid_years.unique())  # [2023, 2024, 2025]
+        all_years_str = [str(y) for y in all_years]  # ['2023','2024','2025']
+
+        # Якщо раптом даних немає — не падаємо
+        if not all_years_str:
+            all_years_str = [str(this_year)]
+
+        default_years = all_years_str[-3:] if len(all_years_str) >= 3 else all_years_str
+
+        selected_years = st.multiselect(
+            "Оберіть роки для аналізу",
+            options=all_years_str,
+            default=default_years,
+            key="ui_years_filter_general_rating",
+        )
+
+        if not selected_years:
+            st.info("Роки не обрано — показуємо останній доступний рік.")
+            selected_years = [all_years_str[-1]]
+
+        # Перерахуємо бали, а потім відфільтруємо по обраних роках
+        full_ratings = st.session_state.np_ratings.copy()
+        for i, row in full_ratings.iterrows():
+            full_ratings.iloc[i] = calc.calculate_all_scores_for_np(row)
+
+        full_ratings[c.NP_COL_PERIOD] = pd.to_numeric(full_ratings[c.NP_COL_PERIOD], errors="coerce").astype("Int64")
+        full_ratings = full_ratings[full_ratings[c.NP_COL_PERIOD].isin(pd.Series(selected_years).astype(int))]
+        full_ratings[c.NP_COL_PERIOD] = full_ratings[c.NP_COL_PERIOD].astype(str)
+
+        # ==== Фільтр по НП ====
+        pib_list = sorted(full_ratings[c.COL_PIB].dropna().unique().tolist())
         selected_pibs = st.multiselect("Оберіть НП для аналізу", pib_list, default=pib_list[:5])
 
-        # Розрахунок повних рейтингів (переконайтеся, що calc.calculate_all_scores_for_np працює)
-        full_ratings = st.session_state.np_ratings.copy()
-        for idx, row in full_ratings.iterrows():
-            full_ratings.iloc[idx] = calc.calculate_all_scores_for_np(row)
-
-        # Фільтруємо дані за обраними НП
         filtered_ratings = full_ratings[full_ratings[c.COL_PIB].isin(selected_pibs)]
 
-        # Вибір типу графіка
-        chart_type = st.selectbox("Тип графіка", ["bar", "pie", "line"], index=0)
+        # ==== Тип графіка ====
+        # chart_type = st.selectbox("Тип графіка", ["bar", "pie", "line"], index=0)
+        chart_type = st.selectbox("Тип графіка", ["гістограма", "кругова діаграма", "лінійна діаграма"], index=0)
 
-        if chart_type == "bar":
-            # Бар-графік для загальних балів
-            # Правильне порівняння з середнім значенням через joinaggregate (додає поле mean_IB_total до кожного рядка)
+        if chart_type == "гістограма":
             bar_chart = alt.Chart(filtered_ratings).transform_joinaggregate(
                 mean_IB_total=f"mean({c.NP_COL_IB_TOTAL})"
             ).mark_bar(opacity=0.7).encode(
@@ -1388,15 +1367,13 @@ def main_app():
                 y=alt.Y(c.NP_COL_IB_TOTAL, title="Бали (ІБ = ПП + НТР + ОР)"),
                 color=alt.condition(
                     alt.datum[c.NP_COL_IB_TOTAL] > alt.datum.mean_IB_total,
-                    alt.value("#FFD700"),  # вище середнього — золотий
-                    alt.value("#808080")  # нижче середнього — сірий
+                    alt.value("#FFD700"), alt.value("#808080")
                 ),
                 tooltip=[c.COL_PIB, alt.Tooltip(c.NP_COL_IB_TOTAL, format=".2f")]
             ).properties(height=400, width=800)
             st.altair_chart(bar_chart, use_container_width=True)
 
-        elif chart_type == "pie":
-            # Pie-графік для розподілу балів по блоках (сума по всіх обраних НП)
+        elif chart_type == "кругова діаграма":
             pie_df = pd.DataFrame({
                 "Категорія": ["ПП", "НТР", "ОР"],
                 "Бали": [
@@ -1412,25 +1389,41 @@ def main_app():
             ).properties(title="Розподіл балів за блоками")
             st.altair_chart(pie_chart, use_container_width=True)
 
-        elif chart_type == "line":
-            # Лінія для динаміки (потрібна колонка "Період" у np_ratings)
-            if c.NP_COL_PERIOD not in st.session_state.np_ratings.columns:
-                st.warning("Для лінійного графіка додайте колонку 'Період' (наприклад, '2024', '2025') у np_ratings.")
+        elif chart_type == "лінійна діаграма":
+            if filtered_ratings.empty:
+                st.warning("Немає даних для побудови динаміки за обрані роки/НП.")
             else:
-                line_df = filtered_ratings.groupby(c.NP_COL_PERIOD)[c.NP_COL_IB_TOTAL].mean().reset_index()
-                line_chart = alt.Chart(line_df).mark_line(color="#FFD700").encode(
-                    x=c.NP_COL_PERIOD,
-                    y=alt.Y(c.NP_COL_IB_TOTAL, title="Середній ІБ"),
-                    tooltip=[c.NP_COL_PERIOD, alt.Tooltip(c.NP_COL_IB_TOTAL, format=".2f")]
-                ).properties(height=300)
-                st.altair_chart(line_chart, use_container_width=True)
+                # групуємо середній ІБ по роках (за потреби можна робити по кожному ПІБ окремо)
+                dyn = (
+                    filtered_ratings
+                    .groupby([c.NP_COL_PERIOD, c.COL_PIB], as_index=False)[c.NP_COL_IB_TOTAL]
+                    .mean()
+                    .sort_values([c.COL_PIB, c.NP_COL_PERIOD])
+                )
+
+                n_periods = dyn[c.NP_COL_PERIOD].nunique()
+                if n_periods < 2:
+                    st.info("Для ліній по кожному НП оберіть щонайменше два роки.")
+                    chart = alt.Chart(dyn).mark_point(size=80).encode(
+                        x=c.NP_COL_PERIOD, y=c.NP_COL_IB_TOTAL, color=c.COL_PIB,
+                        tooltip=[c.COL_PIB, c.NP_COL_PERIOD, alt.Tooltip(c.NP_COL_IB_TOTAL, format=".2f")]
+                    )
+                else:
+                    chart = alt.Chart(dyn).mark_line(strokeWidth=3).encode(
+                        x=c.NP_COL_PERIOD, y=c.NP_COL_IB_TOTAL, color=c.COL_PIB,
+                        tooltip=[c.COL_PIB, c.NP_COL_PERIOD, alt.Tooltip(c.NP_COL_IB_TOTAL, format=".2f")]
+                    )
+                st.altair_chart(chart.properties(height=300), use_container_width=True)
 
         st.markdown("---")
-        # 📋 Таблиця з красивими заголовками
-        st.dataframe(with_pretty_headers(filtered_ratings), use_container_width=True)
+        # 🔹 Готуємо версію тільки для показу/експорту
+        df_view = with_pretty_headers(humanize_bools(filtered_ratings))
+
+        # 📋 Таблиця з красивими заголовками і «Так/Ні» замість True/False
+        st.dataframe(df_view, use_container_width=True)
 
         # ⬇️ Кнопка для завантаження CSV у читабельному вигляді
-        csv_hr = with_pretty_headers(filtered_ratings).to_csv(index=False, encoding="utf-8-sig")
+        csv_hr = df_view.to_csv(index=False, encoding="utf-8-sig")
         st.download_button(
             "⬇️ Завантажити CSV",
             csv_hr,
@@ -1438,9 +1431,6 @@ def main_app():
             "text/csv"
         )
 
-        # Додатково показуємо таблицю
-        # st.dataframe(filtered_ratings)
-        #st.dataframe(st.session_state.np_ratings)
 
     elif choice == "⚙️ Управління НП" and st.session_state.is_admin:
         st.header("Управління списком Наукових Працівників")

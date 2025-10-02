@@ -12,17 +12,6 @@ def safe_get(data_row, column_name, default_value=0):
     return data_row[column_name]
 
 
-# def parse_json_details(json_string, default_value=None):
-#     """Безпечно парсить JSON-рядок."""
-#     if default_value is None:
-#         default_value = []
-#     try:
-#         if pd.isna(json_string) or not json_string:
-#             return default_value
-#         return json.loads(json_string)
-#     except (json.JSONDecodeError, TypeError):
-#         return default_value
-
 def parse_json_details(json_value, default_value=None):
     """Безпечно повертає список словників з JSON-поля.
        Приймає рядок JSON, list, dict, число або NaN."""

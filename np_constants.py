@@ -257,6 +257,9 @@ NP_POINTS_OR_LINGVO_PYSPOVYJ_PER_4_PAGES = 5
 NP_COL_OR_PIDV_KVAL_KILKIST = "НП_Ор_14_підв_квал_кількість"
 NP_POINTS_OR_PIDV_KVAL_PER_COURSE = 5
 
+# NP_COL_OR_PIDV_KVAL_KILKIST = "НП_Ор_15_підвищення_кваліфікації_кількість"  # вже є
+# NP_COL_OR_PIDV_KVAL_DETAILS_JSON = "НП_Ор_15_підвищення_кваліфікації_деталі_JSON"
+
 # --- Список усіх стовпців для даних НП ---
 ALL_NP_RATING_COLUMNS = [] # Буде заповнено в data_manager.py
 
